@@ -109,7 +109,10 @@ int	qembd_lowres_rect[4];
 int			qembd_lowres_active;			// a low-res view is waiting for the display
 const byte	*qembd_lowres_src;				// half-resolution buffer (row 0)
 int			qembd_lowres_stride;
-byte		qembd_lowres_pending[PD_RENDER_HEIGHT / 2];	// per full-res row pair
+byte		qembd_lowres_pending[PD_RENDER_HEIGHT / 2];	// per full-res row pair: 1 = drawn this frame,
+														// 2 = kept from the last frame (interlaced)
+byte		qembd_lowres_shown[PD_RENDER_HEIGHT / 2];	// set by the display: the LCD holds this
+														// half-res row as it is now
 
 // Expand one half-resolution row into the two rows of its pair in vid.buffer
 static void D_UpscaleRow (int p)
@@ -211,7 +214,15 @@ void D_UpscaleScreen (void)
 	qembd_lowres_stride = screenwidth;
 	memset (qembd_lowres_pending, 0, sizeof(qembd_lowres_pending));
 	for (p=r_refdef.vrect.y ; p<r_refdef.vrect.y + r_refdef.vrect.height ; p++)
-		qembd_lowres_pending[p] = 1;
+	{
+		if (R_ROW_SKIPPED(p))
+			qembd_lowres_pending[p] = 2;
+		else
+		{
+			qembd_lowres_pending[p] = 1;
+			qembd_lowres_shown[p] = 0;
+		}
+	}
 	qembd_lowres_active = 1;
 }
 #endif

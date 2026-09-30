@@ -396,6 +396,8 @@ void R_SetupFrame (void)
 
 	r_framecount++;
 
+	r_maxdist2 = r_maxdist.value > 0 ? r_maxdist.value * r_maxdist.value : 0;
+
 	numbtofpolys = 0;
 
 // debugging
@@ -424,6 +426,22 @@ r_refdef.viewangles[2]=    0;
 	r_dowarp = true;	// always render into the low-res buffer
 #else
 	r_dowarp = r_dosinewarp;
+#endif
+
+#ifdef PD_LOWRES_3D
+// Interlaced: draw only every other row of the view, alternating each frame. The
+// other rows keep the previous frame (the low-res view buffer is only written by
+// the 3D renderer). Draw every row when the view was resized or the map changed,
+// since the kept rows would not match.
+	{
+		static model_t	*interlace_world;
+		qboolean		full;
+
+		full = !r_interlace.value || r_viewchanged || (r_dowarp != r_dowarpold) ||
+				lcd_x.value || cl.worldmodel != interlace_world;
+		interlace_world = cl.worldmodel;
+		r_interlace_skip = full ? 2 : (r_framecount & 1);
+	}
 #endif
 
 	if ((r_dowarp != r_dowarpold) || r_viewchanged || lcd_x.value)

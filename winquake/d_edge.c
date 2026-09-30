@@ -271,7 +271,9 @@ void D_DrawSurfaces (void)
 				d_ziorigin = -0.9F;
 
 				PROF_BEGINF(P_OTHER);
-				D_DrawSolidSurface (s, (int)r_clearcolor.value & 0xFF);
+			// with a render distance (r_maxdist) the culled geometry shows the
+			// background: make it black (palette index 0)
+				D_DrawSolidSurface (s, r_maxdist2 > 0 ? 0 : (int)r_clearcolor.value & 0xFF);
 				PROF_ENDF(P_OTHER);
 				D_DrawZSpans (s->spans);
 			}

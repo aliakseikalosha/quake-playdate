@@ -44,16 +44,21 @@ for f in sys_port vid_port in_port cd_null; do clang "${CFLAGS[@]}" -c "$TREE/po
 clang "${CFLAGS[@]}" -c "$TREE/port/fio/fio_posix.c" -o "$O/fio_posix.o" & pids+=($!)
 
 # display.c as tree_* ; and, for the lazy-upscale check, a copy that always dithers the expanded buffer as old_*
-ren() { echo "-Dqembd_fillrect=$1_fillrect -Dqembd_vidinit=$1_vidinit -Dqembd_get_width=$1_get_width -Dqembd_get_height=$1_get_height -Dqembd_refresh=$1_refresh"; }
+ren() { echo "-Dqembd_fillrect=$1_fillrect -Dqembd_vidinit=$1_vidinit -Dqembd_get_width=$1_get_width -Dqembd_get_height=$1_get_height -Dqembd_refresh=$1_refresh -Dqembd_display_invalidate=$1_display_invalidate"; }
 clang "${CFLAGS[@]}" $(ren tree) -c "$TREE/port/boards/playdate/display.c" -o "$O/display_tree.o" & pids+=($!)
 if [ -z "$NO_LAZY_CHECK" ]; then
   python3 - "$TREE/port/boards/playdate/display.c" "$O/display_old.c" <<'PY'
 import sys
 s = open(sys.argv[1]).read()
-a = "\t\t\tif (qembd_lowres_active && qembd_lowres_pending[qy >> 1])"
+a = "\t\t\tif (qembd_lowres_active && qembd_lowres_pending[qy >> 1]"
 i = s.index(a)
 j = s.index("\t\t\telse\n\t\t\t\tlowres_pair(", i)
-open(sys.argv[2], "w").write(s[:i] + "\t\t\t" + s[j + len("\t\t\telse\n\t\t\t\t"):])
+s = s[:i] + "\t\t\t" + s[j + len("\t\t\telse\n\t\t\t\t"):]
+# the interlace bookkeeping (which LCD rows still show their row) belongs to the tree copy only
+e = "extern uint8_t qembd_lowres_shown[];"
+if e in s:
+    s = s.replace(e, "static uint8_t old_lowres_shown[PD_RENDER_HEIGHT / 2];").replace("qembd_lowres_shown", "old_lowres_shown")
+open(sys.argv[2], "w").write(s)
 PY
   clang "${CFLAGS[@]}" $(ren old) -c "$O/display_old.c" -o "$O/display_old.o" & pids+=($!)
 fi

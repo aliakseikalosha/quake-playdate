@@ -40,7 +40,8 @@ enum
 #define PD_REFRESH_RATE 30 /* frames per second the system calls update at; 0 = as fast as possible */
 #endif
 
-#define CRANK_TURN 1.0f /* degrees of view turn per degree of crank */
+extern cvar_t pd_maxfps; /* "Max framerate" in the options menu: 30, 50 or 0 = unlimited */
+extern cvar_t crank_speed; /* degrees of view turn per degree of crank ("Crank speed" in the options menu) */
 #define RUN_SPEED 400
 
 static int state = ST_SPLASH;
@@ -209,7 +210,7 @@ static void poll_input(void)
 
 	/* Crank turns the player while playing (clockwise = right) */
 	if (key_dest == key_game && cls.state == ca_connected && !cls.demoplayback)
-		cl.viewangles[YAW] -= qembd_pd->system->getCrankChange() * CRANK_TURN;
+		cl.viewangles[YAW] -= qembd_pd->system->getCrankChange() * crank_speed.value;
 }
 
 static void apply_run(void)
@@ -261,6 +262,23 @@ static void rebuild_weapon_item(void)
 }
 
 /* --------------------------------------------------------------- update */
+
+/* Follow the frame rate cap (pd_maxfps) whenever it changes: the menu, config.cfg, the console */
+static void apply_refresh_rate(void)
+{
+	static int applied = -1;
+	int rate = (int)pd_maxfps.value;
+
+	if (rate < 0)
+		rate = 0;
+	if (rate > 50)
+		rate = 50; /* the display's maximum */
+	if (rate != applied)
+	{
+		qembd_pd->display->setRefreshRate((float)rate);
+		applied = rate;
+	}
+}
 
 static int update(void *ud)
 {
@@ -318,6 +336,7 @@ static int update(void *ud)
 		pd_stack_top = 0;
 #endif
 		in_frame = 0;
+		apply_refresh_rate();
 		return 1;
 
 	default:
@@ -334,6 +353,10 @@ int eventHandler(PlaydateAPI *playdate, PDSystemEvent event, uint32_t arg)
 
 	if (event == kEventPause)
 		rebuild_weapon_item();
+
+	/* Interlaced rendering leaves unchanged rows alone: redraw them all after the system screens */
+	if (event == kEventResume || event == kEventUnlock)
+		qembd_display_invalidate();
 
 	/* The game is stopped from the system menu without Host_Shutdown ever running, so write
 	 * the options (config.cfg) whenever the system takes over; a no-op if none changed. */

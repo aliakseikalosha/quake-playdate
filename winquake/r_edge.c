@@ -706,7 +706,8 @@ void R_ScanEdges (void)
 		}
 
 		PROF_BEGINF(P_SEGEN);
-		(*pdrawfunc) ();
+		if (!R_ROW_SKIPPED(iv))
+			(*pdrawfunc) ();
 		PROF_ENDF(P_SEGEN);
 
 	// flush the span list if we can't be sure we have enough spans left for
@@ -755,7 +756,8 @@ void R_ScanEdges (void)
 	if (newedges[iv])
 		R_InsertNewEdges (newedges[iv], edge_head.next);
 
-	(*pdrawfunc) ();
+	if (!R_ROW_SKIPPED(iv))
+		(*pdrawfunc) ();
 
 // draw whatever's left in the span list
 	if (r_drawculledpolys)
@@ -1174,6 +1176,10 @@ static espan_t *R_ScanEdgeLines (espan_t **heads, int heads_on)
 		PROF_ENDF(P_SEINS);
 
 		PROF_BEGINF(P_SEGEN);
+	// interlaced: no spans on the rows kept from the previous frame (each line starts
+	// with an empty surface stack, so the edges only need stepping past them)
+		if (R_ROW_SKIPPED(iv))
+			goto line_done;
 #ifdef PD_USE_ASM
 		asm_line = 0;
 	// the surface stack never holds more entries than there are active edges, and the
@@ -1344,6 +1350,7 @@ gotposition:
 		if (asm_line < 0)
 			R_AsmLineCompare (&line, sp);
 #endif
+line_done:
 		PROF_ENDF(P_SEGEN);
 
 		if (iv == bottom)

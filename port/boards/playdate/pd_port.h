@@ -16,4 +16,7 @@ const char *pdq_path(const char *path, char *out, size_t size);
 /* Create every directory leading up to the file in path (in the Data folder) */
 void pdq_mkdirs(const char *path);
 
+/* The system drew over the LCD frame buffer: redraw every row (display.c) */
+void qembd_display_invalidate(void);
+
 #endif /* PD_PORT_H */

@@ -53,6 +53,7 @@ extern	float	pixelAspect;
 extern int		r_drawnpolycount;
 
 extern cvar_t	r_clearcolor;
+extern float	r_maxdist2;		// render distance squared this frame, 0 = unlimited (r_main.c)
 
 extern int	sintable[SIN_BUFFER_SIZE];
 extern int	intsintable[SIN_BUFFER_SIZE];

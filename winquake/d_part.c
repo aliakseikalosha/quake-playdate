@@ -96,6 +96,27 @@ void D_DrawParticle (particle_t *pparticle)
 	else if (pix > d_pix_max)
 		pix = d_pix_max;
 
+	if (r_interlace_skip != 2)
+	{
+	// interlaced: only the rows drawn this frame
+		count = pix << _d_y_aspect_shift;
+
+		for ( ; count ; count--, v++, pz += _d_zwidth, pdest += _screenwidth)
+		{
+			if (R_ROW_SKIPPED(v))
+				continue;
+			for (i=0 ; i<pix ; i++)
+			{
+				if (pz[i] <= izi)
+				{
+					pz[i] = izi;
+					pdest[i] = pparticle->color;
+				}
+			}
+		}
+		return;
+	}
+
 	switch (pix)
 	{
 	case 1:

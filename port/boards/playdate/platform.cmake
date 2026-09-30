@@ -26,9 +26,9 @@ endif()
 set(PD_RENDER_WIDTH ${_pd_default_w} CACHE STRING "Quake render width (>= 320, multiple of 16 with PD_LOWRES_3D)")
 set(PD_RENDER_HEIGHT 240 CACHE STRING "Quake render height (>= 200, even)")
 
-# Update-callback rate the system aims for (frames per second, max 50; 0 = as
-# fast as the game can run). 30 is easy on the battery; try 50 or 0 to let
-# lighter scenes run faster than 30.
+# Update-callback rate the system aims for while the game loads (frames per second, max 50;
+# 0 = as fast as the game can run). From the first frame on "Max framerate" in the Options
+# menu (pd_maxfps, 30 by default) sets it.
 set(PD_REFRESH_RATE 30 CACHE STRING "Playdate refresh rate (0-50, 0 = uncapped)")
 
 if(NOT CMAKE_BUILD_TYPE)

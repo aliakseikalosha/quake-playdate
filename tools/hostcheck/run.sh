@@ -2,6 +2,7 @@
 # tools/hostcheck/run.sh [frames]            build and run the lazy-upscale invariants on the scripted scenarios
 # HGOLD=file tools/hostcheck/run.sh          write per-frame LCD hashes instead (golden mode)
 # HMENU=1 tools/hostcheck/run.sh             press keys through the options menu and check what it does and saves
+# HINTERLACE=1 tools/hostcheck/run.sh        any of the above with interlaced rendering (r_interlace 1)
 set -e
 HERE=$(cd "$(dirname "$0")" && pwd)
 TREE=${TREE:-$(cd "$HERE/../.." && pwd)}

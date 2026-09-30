@@ -666,8 +666,16 @@ void V_UpdatePalette (void)
 		b = basepal[2];
 		basepal += 3;
 	
-		for (j=0 ; j<NUM_CSHIFTS ; j++)	
+		for (j=0 ; j<NUM_CSHIFTS ; j++)
 		{
+#ifdef QEMBD_PLAYDATE
+		// port: the 1-bit display only sees luminance, so the water / slime / lava
+		// tint (a 50-60% blend towards one colour) would only squeeze the picture
+		// into the midtones (under water black became mid grey and the highlights
+		// clipped). Keep the full black-to-white range; the view still warps.
+			if (j == CSHIFT_CONTENTS)
+				continue;
+#endif
 			r += (cl.cshifts[j].percent*(cl.cshifts[j].destcolor[0]-r))>>8;
 			g += (cl.cshifts[j].percent*(cl.cshifts[j].destcolor[1]-g))>>8;
 			b += (cl.cshifts[j].percent*(cl.cshifts[j].destcolor[2]-b))>>8;

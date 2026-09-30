@@ -734,7 +734,8 @@ void R_DrawParticles (void)
 		glTexCoord2f (0,1);
 		glVertex3f (p->org[0] + right[0]*scale, p->org[1] + right[1]*scale, p->org[2] + right[2]*scale);
 #else
-		D_DrawParticle (p);
+		if (r_maxdist2 <= 0 || R_BoxBeyond (p->org, p->org) == false)
+			D_DrawParticle (p);
 #endif
 		p->org[0] += p->vel[0]*frametime;
 		p->org[1] += p->vel[1]*frametime;

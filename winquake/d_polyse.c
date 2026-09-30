@@ -149,7 +149,8 @@ void D_PolysetDrawFinalVerts (finalvert_t *fv, int numverts)
 	// valid triangle coordinates for filling can include the bottom and
 	// right clip edges, due to the fill rule; these shouldn't be drawn
 		if ((fv->v[0] < r_refdef.vrectright) &&
-			(fv->v[1] < r_refdef.vrectbottom))
+			(fv->v[1] < r_refdef.vrectbottom) &&
+			!R_ROW_SKIPPED(fv->v[1]))
 		{
 			z = fv->v[5]>>16;
 			zbuf = zspantable[fv->v[1]] + fv->v[0];
@@ -362,6 +363,9 @@ split:
 	if ((lp2[1] == lp1[1]) && (lp2[0] < lp1[0]))
 		goto nodraw;
 
+
+	if (R_ROW_SKIPPED(new[1]))
+		goto nodraw;
 
 	z = new[5]>>16;
 	zbuf = zspantable[new[1]] + new[0];
@@ -736,6 +740,7 @@ D_FastRasterizeTriangle (int *pv[3], const int sv[3], int xdenom)
 	float		p01_minus_p21, p11_minus_p21, p00_minus_p20, p10_minus_p20;
 	int			*ltop, *lbot, *rtop, *rbot;
 	int			lrem, rrem, lseg, rseg;
+	int			row;
 	int			i, k;
 	byte		*cmap = (byte *)acolormap;
 	int			_r_zistepx, _r_lstepx, _a_ststepxwhole, _a_sstepxfrac, _a_tstepxfrac, _skinwidth;
@@ -823,6 +828,7 @@ have_table:
 	lrem = lbot[1] - ltop[1];
 	rrem = rbot[1] - rtop[1];
 	lseg = rseg = 1;
+	row = ltop[1];
 
 	D_FastLeftSegment (&l, &g, ltop, sv[et->left[0]], lbot, lrem, rtop[0], true);
 	D_FastRightSegment (&r, rtop, rbot, 0);
@@ -844,7 +850,7 @@ have_table:
 			r.aspancount += r.ubasestep;
 		}
 
-		if (lcount)
+		if (lcount && !R_ROW_SKIPPED(row))
 		{
 			byte	*lpdest = l.pdest;
 			byte	*lptex = l.ptex;
@@ -939,6 +945,7 @@ have_table:
 
 		lrem--;
 		rrem--;
+		row++;
 
 		if (rrem == 0)
 		{
@@ -1074,7 +1081,8 @@ void D_PolysetDrawSpans8 (spanpackage_t *pspanpackage)
 			_d_aspancount += _ubasestep;
 		}
 
-		if (lcount)
+		if (lcount && (r_interlace_skip == 2 ||
+				!R_ROW_SKIPPED(((byte *)pspanpackage->pdest - (byte *)d_viewbuffer) / screenwidth)))
 		{
 			lpdest = pspanpackage->pdest;
 			lptex = pspanpackage->ptex;

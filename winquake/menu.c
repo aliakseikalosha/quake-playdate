@@ -504,35 +504,71 @@ void M_Menu_Save_f (void)
 }
 
 
-void M_Load_Draw (void)
+// port: the load and save menus use a double-size font in screen coordinates. A slot's
+// comment (level name padded to 22 characters, then "kills:%3i/%3i") is 39 characters,
+// too wide for 400 pixels at that size, so it is shown as the level name cut to 15
+// characters and the kills as "k/t" (23 characters at most).
+#define	SLOT_SCALE		2
+#define	SLOT_CW			(8*SLOT_SCALE)
+#define	SLOT_TOP		32
+#define	SLOT_CURSOR_X	4
+#define	SLOT_TEXT_X		(SLOT_CURSOR_X + SLOT_CW + 4)
+
+// out holds at least 64 characters; the text is cut to what fits on the screen
+static void M_SlotText (int i, char *out)
+{
+	char		name[23];
+	char		*c = m_filenames[i], *k;
+	int			n, fit = ((int)vid.width - SLOT_TEXT_X) / SLOT_CW;
+
+	if (fit > 63)
+		fit = 63;
+	if (!loadable[i] || strlen (c) <= 22 || !(k = strstr (c + 22, "kills:")) || !strchr (k, '/'))
+	{
+		Q_strncpy (out, c, fit);
+		out[fit] = 0;
+		return;
+	}
+
+	memcpy (name, c, 22);
+	for (n=22 ; n>0 && name[n-1] == ' ' ; n--)
+		;
+	name[n > 15 ? 15 : n] = 0;
+	sprintf (out, "%-15s %d/%d", name, Q_atoi (k + 6), Q_atoi (strchr (k, '/') + 1));
+	out[fit] = 0;
+}
+
+static void M_DrawSlots (char *picname)
 {
 	int		i;
+	char	text[64], *t;
 	qpic_t	*p;
 
-	p = Draw_CachePic ("gfx/p_load.lmp");
+	p = Draw_CachePic (picname);
 	M_DrawPic ( (320-p->width)/2, 4, p);
 
-	for (i=0 ; i< MAX_SAVEGAMES; i++)
-		M_Print (16, 32 + 8*i, m_filenames[i]);
+	for (i=0 ; i<MAX_SAVEGAMES ; i++)
+	{
+		M_SlotText (i, text);
+		for (t=text ; *t ; t++)
+			Draw_CharacterScaled (SLOT_TEXT_X + (t - text)*SLOT_CW, SLOT_TOP + i*SLOT_CW,
+					(*t) + 128, SLOT_SCALE);
+	}
 
 // line cursor
-	M_DrawCharacter (8, 32 + load_cursor*8, 12 + _M_RealTime4Mod1());
+	Draw_CharacterScaled (SLOT_CURSOR_X, SLOT_TOP + load_cursor*SLOT_CW,
+			12 + _M_RealTime4Mod1(), SLOT_SCALE);
+}
+
+void M_Load_Draw (void)
+{
+	M_DrawSlots ("gfx/p_load.lmp");
 }
 
 
 void M_Save_Draw (void)
 {
-	int		i;
-	qpic_t	*p;
-
-	p = Draw_CachePic ("gfx/p_save.lmp");
-	M_DrawPic ( (320-p->width)/2, 4, p);
-
-	for (i=0 ; i<MAX_SAVEGAMES ; i++)
-		M_Print (16, 32 + 8*i, m_filenames[i]);
-
-// line cursor
-	M_DrawCharacter (8, 32 + load_cursor*8, 12 + _M_RealTime4Mod1());
+	M_DrawSlots ("gfx/p_save.lmp");
 }
 
 
@@ -1043,15 +1079,88 @@ again:
 //=============================================================================
 /* OPTIONS MENU */
 
+// port: the options menu is drawn with a double-size font in screen coordinates, as a
+// list that scrolls when it does not fit. Rows that make no sense on the Playdate are
+// gone: Customize controls (the port maps the buttons), Go to console, Screen size,
+// Invert mouse, Lookspring and Lookstrafe.
+enum
+{
+	OPT_RESET,
+	OPT_BRIGHTNESS,
+	OPT_CRANKSPEED,
+	OPT_MUSICVOL,
+	OPT_SFXVOL,
+	OPT_ALWAYSRUN,
+	OPT_AUTOFIRE,
+	OPT_TEXDETAIL,
+	OPT_INTERLACE,
+	OPT_MAXDIST,
+	OPT_MAXFPS,
+	OPT_VIDEO,
 #ifdef _WIN32
-#define	OPTIONS_ITEMS	16
-#else
-#define	OPTIONS_ITEMS	15
+	OPT_USEMOUSE,
 #endif
+	OPTIONS_ITEMS
+};
 
-#define	SLIDER_RANGE	10
+#define	OPT_SCALE		2					// font scale
+#define	OPT_CW			(8*OPT_SCALE)		// character cell
+#define	OPT_TOP			32					// first row, below the title
+#define	OPT_CURSOR_X	4
+#define	OPT_LABEL_X		(OPT_CURSOR_X + OPT_CW + 4)
+#define	OPT_VALUE_X		(OPT_LABEL_X + 14*OPT_CW + OPT_CW)	// labels are at most 14 characters
+#define	OPT_SLIDER		6					// slider segments
 
 int		options_cursor;
+static int	options_top;	// first row shown
+
+// crank turn speed (degrees of view turn per degree of crank), see port/boards/playdate/main.c
+cvar_t	crank_speed = {"crank_speed", "1.4", true};
+
+// frame rate cap: the rate the Playdate calls the game at (display->setRefreshRate,
+// port/boards/playdate/main.c), 0 = unlimited; 30 by default
+cvar_t	pd_maxfps = {"pd_maxfps", "30", true};
+static const int	maxfps_steps[] = {30, 50, 0};
+#define	NUM_MAXFPS_STEPS	(int)(sizeof(maxfps_steps) / sizeof(maxfps_steps[0]))
+
+static int M_MaxFpsStep (void)
+{
+	if (pd_maxfps.value <= 0)
+		return NUM_MAXFPS_STEPS - 1;
+	return pd_maxfps.value > 30 ? 1 : 0;
+}
+#define	CRANK_SPEED_STEP	0.2f
+#define	CRANK_SPEED_MIN		0.2f
+#define	CRANK_SPEED_MAX		3.0f
+
+// render distance steps of the Draw distance slider; 0 (the right end) = unlimited
+static const int	maxdist_steps[] = {256, 384, 512, 768, 1024, 1536, 2048, 3072, 0};
+#define	NUM_MAXDIST_STEPS	(int)(sizeof(maxdist_steps) / sizeof(maxdist_steps[0]))
+
+extern cvar_t	r_maxdist;
+
+static int M_MaxDistStep (void)
+{
+	int		i, best = NUM_MAXDIST_STEPS - 1;
+
+	if (r_maxdist.value <= 0)
+		return best;
+	for (i=0 ; i<NUM_MAXDIST_STEPS - 1 ; i++)
+		if (r_maxdist.value <= maxdist_steps[i])
+			return i;
+	return best;
+}
+
+static qboolean M_OptionShown (int row)
+{
+	if (row == OPT_VIDEO)
+		return vid_menudrawfn != NULL;
+#ifdef _WIN32
+	if (row == OPT_USEMOUSE)
+		return modestate == MS_WINDOWED;
+#endif
+	return true;
+}
 
 void M_Menu_Options_f (void)
 {
@@ -1059,16 +1168,13 @@ void M_Menu_Options_f (void)
 	m_state = m_options;
 	m_entersound = true;
 
-#ifdef _WIN32
-	if ((options_cursor == 15) && (modestate != MS_WINDOWED))
-	{
+	if (!M_OptionShown (options_cursor))
 		options_cursor = 0;
-	}
-#endif
 }
 
 
 extern cvar_t	d_mipcap;
+extern cvar_t	r_interlace;
 
 void M_AdjustSliders (int dir)
 {
@@ -1077,15 +1183,7 @@ void M_AdjustSliders (int dir)
 
 	switch (options_cursor)
 	{
-	case 3:	// screen size
-		scr_viewsize.value += dir * 10;
-		if (scr_viewsize.value < 30)
-			scr_viewsize.value = 30;
-		if (scr_viewsize.value > 120)
-			scr_viewsize.value = 120;
-		Cvar_SetValue ("viewsize", scr_viewsize.value);
-		break;
-	case 4:	// gamma
+	case OPT_BRIGHTNESS:
 		v_gamma.value -= dir * 0.05f;
 		if (v_gamma.value < 0.5f)
 			v_gamma.value = 0.5f;
@@ -1093,15 +1191,16 @@ void M_AdjustSliders (int dir)
 			v_gamma.value = 1;
 		Cvar_SetValue ("gamma", v_gamma.value);
 		break;
-	case 5:	// mouse speed
-		sensitivity.value += dir * 0.5f;
-		if (sensitivity.value < 1)
-			sensitivity.value = 1;
-		if (sensitivity.value > 11)
-			sensitivity.value = 11;
-		Cvar_SetValue ("sensitivity", sensitivity.value);
+	case OPT_CRANKSPEED:
+	// whole steps of 0.2 (snapped, so the float sums do not drift off 1.4 etc.)
+		crank_speed.value = (int)(crank_speed.value / CRANK_SPEED_STEP + 0.5f + dir) * CRANK_SPEED_STEP;
+		if (crank_speed.value < CRANK_SPEED_MIN)
+			crank_speed.value = CRANK_SPEED_MIN;
+		if (crank_speed.value > CRANK_SPEED_MAX)
+			crank_speed.value = CRANK_SPEED_MAX;
+		Cvar_SetValue ("crank_speed", crank_speed.value);
 		break;
-	case 6:	// music volume
+	case OPT_MUSICVOL:
 #ifdef _WIN32
 		bgmvolume.value += dir * 1.0f;
 #else
@@ -1113,7 +1212,7 @@ void M_AdjustSliders (int dir)
 			bgmvolume.value = 1;
 		Cvar_SetValue ("bgmvolume", bgmvolume.value);
 		break;
-	case 7:	// sfx volume
+	case OPT_SFXVOL:
 		volume.value += dir * 0.1f;
 		if (volume.value < 0)
 			volume.value = 0;
@@ -1122,7 +1221,7 @@ void M_AdjustSliders (int dir)
 		Cvar_SetValue ("volume", volume.value);
 		break;
 
-	case 8:	// allways run
+	case OPT_ALWAYSRUN:
 		if (cl_forwardspeed.value > 200)
 		{
 			Cvar_SetValue ("cl_forwardspeed", 200);
@@ -1135,28 +1234,44 @@ void M_AdjustSliders (int dir)
 		}
 		break;
 
-	case 9:	// invert mouse
-		Cvar_SetValue ("m_pitch", -m_pitch.value);
-		break;
-
-	case 10:	// lookspring
-		Cvar_SetValue ("lookspring", !lookspring.value);
-		break;
-
-	case 11:	// lookstrafe
-		Cvar_SetValue ("lookstrafe", !lookstrafe.value);
-		break;
-
-	case 12:	// autofire (crank out)
+	case OPT_AUTOFIRE:	// crank out
 		Cvar_SetValue ("cl_autofire", !cl_autofire.value);
 		break;
 
-	case 13:	// texture detail: low = d_mipcap 1, the sharpest mip level is never used
+	case OPT_TEXDETAIL:	// low = d_mipcap 1, the sharpest mip level is never used
 		Cvar_SetValue ("d_mipcap", d_mipcap.value >= 1 ? 0 : 1);
 		break;
 
+	case OPT_INTERLACE:	// draw every other row of the 3D view per frame
+		Cvar_SetValue ("r_interlace", !r_interlace.value);
+		break;
+
+	case OPT_MAXDIST:	// render distance, no wrap-around
+		{
+			int		step = M_MaxDistStep () + dir;
+
+			if (step < 0)
+				step = 0;
+			if (step >= NUM_MAXDIST_STEPS)
+				step = NUM_MAXDIST_STEPS - 1;
+			Cvar_SetValue ("r_maxdist", maxdist_steps[step]);
+		}
+		break;
+
+	case OPT_MAXFPS:	// 30, 50, unlimited, no wrap-around
+		{
+			int		step = M_MaxFpsStep () + dir;
+
+			if (step < 0)
+				step = 0;
+			if (step >= NUM_MAXFPS_STEPS)
+				step = NUM_MAXFPS_STEPS - 1;
+			Cvar_SetValue ("pd_maxfps", maxfps_steps[step]);
+		}
+		break;
+
 #ifdef _WIN32
-	case 15:	// _windowed_mouse
+	case OPT_USEMOUSE:
 		Cvar_SetValue ("_windowed_mouse", !_windowed_mouse.value);
 		break;
 #endif
@@ -1164,7 +1279,14 @@ void M_AdjustSliders (int dir)
 }
 
 
-void M_DrawSlider (int x, int y, float range)
+// the options menu's controls, at double size in screen coordinates
+static void M_OptPrint (int x, int y, char *str)
+{
+	for ( ; *str ; str++, x += OPT_CW)
+		Draw_CharacterScaled (x, y, (*str) + 128, OPT_SCALE);
+}
+
+static void M_OptSlider (int x, int y, float range)
 {
 	int	i;
 
@@ -1172,96 +1294,121 @@ void M_DrawSlider (int x, int y, float range)
 		range = 0;
 	if (range > 1)
 		range = 1;
-	M_DrawCharacter (x-8, y, 128);
-	for (i=0 ; i<SLIDER_RANGE ; i++)
-		M_DrawCharacter (x + i*8, y, 129);
-	M_DrawCharacter (x+i*8, y, 130);
-	M_DrawCharacter (x + (SLIDER_RANGE-1)*8 * range, y, 131);
+	Draw_CharacterScaled (x, y, 128, OPT_SCALE);
+	for (i=0 ; i<OPT_SLIDER ; i++)
+		Draw_CharacterScaled (x + (i+1)*OPT_CW, y, 129, OPT_SCALE);
+	Draw_CharacterScaled (x + (i+1)*OPT_CW, y, 130, OPT_SCALE);
+	Draw_CharacterScaled (x + OPT_CW + (int)((OPT_SLIDER-1)*OPT_CW * range), y, 131, OPT_SCALE);
 }
 
-void M_DrawCheckbox (int x, int y, int on)
+static void M_OptCheckbox (int x, int y, int on)
 {
-#if 0
-	if (on)
-		M_DrawCharacter (x, y, 131);
-	else
-		M_DrawCharacter (x, y, 129);
-#endif
-	if (on)
-		M_Print (x, y, "on");
-	else
-		M_Print (x, y, "off");
+	M_OptPrint (x, y, on ? "on" : "off");
+}
+
+static int M_OptionRows (void)
+{
+	int		rows = ((int)vid.height - OPT_TOP) / OPT_CW;
+
+	return rows < 1 ? 1 : rows;
 }
 
 void M_Options_Draw (void)
 {
-	float		r;
+	int		row, line, y, rows;
 	qpic_t	*p;
 
-	M_DrawTransPic (16, 4, Draw_CachePic ("gfx/qplaque.lmp") );
 	p = Draw_CachePic ("gfx/p_option.lmp");
 	M_DrawPic ( (320-p->width)/2, 4, p);
 
-	M_Print (16, 32, "    Customize controls");
-	M_Print (16, 40, "         Go to console");
-	M_Print (16, 48, "     Reset to defaults");
-
-	M_Print (16, 56, "           Screen size");
-	r = (scr_viewsize.value - 30) / (120 - 30);
-	M_DrawSlider (220, 56, r);
-
-	M_Print (16, 64, "            Brightness");
-	r = (1.0f - v_gamma.value) * 2.0f;
-	M_DrawSlider (220, 64, r);
-
-	M_Print (16, 72, "           Mouse Speed");
-	r = (sensitivity.value - 1)/10;
-	M_DrawSlider (220, 72, r);
-
-	M_Print (16, 80, "       CD Music Volume");
-	r = bgmvolume.value;
-	M_DrawSlider (220, 80, r);
-
-	M_Print (16, 88, "          Sound Volume");
-	r = volume.value;
-	M_DrawSlider (220, 88, r);
-
-	M_Print (16, 96,  "            Always Run");
-	M_DrawCheckbox (220, 96, cl_forwardspeed.value > 200);
-
-	M_Print (16, 104, "          Invert Mouse");
-	M_DrawCheckbox (220, 104, m_pitch.value < 0);
-
-	M_Print (16, 112, "            Lookspring");
-	M_DrawCheckbox (220, 112, lookspring.value);
-
-	M_Print (16, 120, "            Lookstrafe");
-	M_DrawCheckbox (220, 120, lookstrafe.value);
-
-	M_Print (16, 128, "              Autofire");
-	M_DrawCheckbox (220, 128, cl_autofire.value);
-
-	M_Print (16, 136, "        Texture detail");
-	if (d_mipcap.value >= 2)
-		M_Print (220, 136, "lowest");
-	else if (d_mipcap.value >= 1)
-		M_Print (220, 136, "low");
-	else
-		M_Print (220, 136, "high");
-
-	if (vid_menudrawfn)
-		M_Print (16, 144, "         Video Options");
-
-#ifdef _WIN32
-	if (modestate == MS_WINDOWED)
+// scroll so the cursor row is on screen
+	rows = M_OptionRows ();
+	if (options_cursor < options_top)
+		options_top = options_cursor;
+	for (row=options_top, line=0 ; row<options_cursor ; row++)
+		if (M_OptionShown (row))
+			line++;
+	while (line >= rows)
 	{
-		M_Print (16, 152, "             Use Mouse");
-		M_DrawCheckbox (220, 152, _windowed_mouse.value);
+		if (M_OptionShown (options_top))
+			line--;
+		options_top++;
 	}
-#endif
 
-// cursor
-	M_DrawCharacter (200, 32 + options_cursor*8, 12 + _M_RealTime4Mod1());
+	for (row=options_top, line=0 ; row<OPTIONS_ITEMS && line<rows ; row++)
+	{
+		if (!M_OptionShown (row))
+			continue;
+		y = OPT_TOP + line*OPT_CW;
+		line++;
+
+		switch (row)
+		{
+		case OPT_RESET:
+			M_OptPrint (OPT_LABEL_X, y, "Reset defaults");
+			break;
+		case OPT_BRIGHTNESS:
+			M_OptPrint (OPT_LABEL_X, y, "Brightness");
+			M_OptSlider (OPT_VALUE_X, y, (1.0f - v_gamma.value) * 2.0f);
+			break;
+		case OPT_CRANKSPEED:
+			M_OptPrint (OPT_LABEL_X, y, "Crank speed");
+			M_OptSlider (OPT_VALUE_X, y, (crank_speed.value - CRANK_SPEED_MIN) / (CRANK_SPEED_MAX - CRANK_SPEED_MIN));
+			break;
+		case OPT_MUSICVOL:
+			M_OptPrint (OPT_LABEL_X, y, "Music volume");
+			M_OptSlider (OPT_VALUE_X, y, bgmvolume.value);
+			break;
+		case OPT_SFXVOL:
+			M_OptPrint (OPT_LABEL_X, y, "Sound volume");
+			M_OptSlider (OPT_VALUE_X, y, volume.value);
+			break;
+		case OPT_ALWAYSRUN:
+			M_OptPrint (OPT_LABEL_X, y, "Always run");
+			M_OptCheckbox (OPT_VALUE_X, y, cl_forwardspeed.value > 200);
+			break;
+		case OPT_AUTOFIRE:
+			M_OptPrint (OPT_LABEL_X, y, "Autofire");
+			M_OptCheckbox (OPT_VALUE_X, y, cl_autofire.value);
+			break;
+		case OPT_TEXDETAIL:
+			M_OptPrint (OPT_LABEL_X, y, "Texture detail");
+			if (d_mipcap.value >= 2)
+				M_OptPrint (OPT_VALUE_X, y, "lowest");
+			else if (d_mipcap.value >= 1)
+				M_OptPrint (OPT_VALUE_X, y, "low");
+			else
+				M_OptPrint (OPT_VALUE_X, y, "high");
+			break;
+		case OPT_INTERLACE:
+			M_OptPrint (OPT_LABEL_X, y, "Interlaced");
+			M_OptCheckbox (OPT_VALUE_X, y, r_interlace.value);
+			break;
+		case OPT_MAXDIST:
+			M_OptPrint (OPT_LABEL_X, y, "Draw distance");
+			M_OptSlider (OPT_VALUE_X, y, (float)M_MaxDistStep () / (NUM_MAXDIST_STEPS - 1));
+			break;
+		case OPT_MAXFPS:
+			M_OptPrint (OPT_LABEL_X, y, "Max framerate");
+			if (M_MaxFpsStep () == NUM_MAXFPS_STEPS - 1)
+				M_OptPrint ((int)vid.width - 9*OPT_CW, y, "unlimited");	// wider than the value column; the label is short
+			else
+				M_OptPrint (OPT_VALUE_X, y, M_MaxFpsStep () ? "50" : "30");
+			break;
+		case OPT_VIDEO:
+			M_OptPrint (OPT_LABEL_X, y, "Video options");
+			break;
+#ifdef _WIN32
+		case OPT_USEMOUSE:
+			M_OptPrint (OPT_LABEL_X, y, "Use mouse");
+			M_OptCheckbox (OPT_VALUE_X, y, _windowed_mouse.value);
+			break;
+#endif
+		}
+
+		if (row == options_cursor)
+			Draw_CharacterScaled (OPT_CURSOR_X, y, 12 + _M_RealTime4Mod1(), OPT_SCALE);
+	}
 }
 
 
@@ -1278,20 +1425,18 @@ void M_Options_Key (int k)
 		m_entersound = true;
 		switch (options_cursor)
 		{
-		case 0:
-			M_Menu_Keys_f ();
-			break;
-		case 1:
-			Host_SaveOptions ();
-			m_state = m_none;
-			Con_ToggleConsole_f ();
-			break;
-		case 2:
+		case OPT_RESET:
 			Cbuf_AddText ("exec default.cfg\n");
-			Cvar_SetValue ("d_mipcap", 0);	// port option that default.cfg does not know about
+			// port options that default.cfg does not know about: back to their
+			// defaults (keep in step with the cvar definitions)
+			Cvar_SetValue ("d_mipcap", 1);
+			Cvar_SetValue ("r_interlace", 1);
+			Cvar_SetValue ("r_maxdist", 512);
+			Cvar_SetValue ("crank_speed", 1.4f);
+			Cvar_SetValue ("pd_maxfps", 30);
 			host_options_dirty = true;
 			break;
-		case 14:
+		case OPT_VIDEO:
 			M_Menu_Video_f ();
 			break;
 		default:
@@ -1302,16 +1447,22 @@ void M_Options_Key (int k)
 
 	case K_UPARROW:
 		S_LocalSound ("misc/menu1.wav");
-		options_cursor--;
-		if (options_cursor < 0)
-			options_cursor = OPTIONS_ITEMS-1;
+		do
+		{
+			options_cursor--;
+			if (options_cursor < 0)
+				options_cursor = OPTIONS_ITEMS-1;
+		} while (!M_OptionShown (options_cursor));
 		break;
 
 	case K_DOWNARROW:
 		S_LocalSound ("misc/menu1.wav");
-		options_cursor++;
-		if (options_cursor >= OPTIONS_ITEMS)
-			options_cursor = 0;
+		do
+		{
+			options_cursor++;
+			if (options_cursor >= OPTIONS_ITEMS)
+				options_cursor = 0;
+		} while (!M_OptionShown (options_cursor));
 		break;
 
 	case K_LEFTARROW:
@@ -1322,24 +1473,6 @@ void M_Options_Key (int k)
 		M_AdjustSliders (1);
 		break;
 	}
-
-	if (options_cursor == 14 && vid_menudrawfn == NULL)
-	{
-		if (k == K_UPARROW)
-			options_cursor = 13;
-		else
-			options_cursor = 0;
-	}
-
-#ifdef _WIN32
-	if ((options_cursor == 15) && (modestate != MS_WINDOWED))
-	{
-		if (k == K_UPARROW)
-			options_cursor = 14;
-		else
-			options_cursor = 0;
-	}
-#endif
 }
 
 //=============================================================================
@@ -3040,6 +3173,8 @@ void M_ServerList_Key (int k)
 void M_Init (void)
 {
 	Cmd_AddCommand ("togglemenu", M_ToggleMenu_f);
+	Cvar_RegisterVariable (&crank_speed);
+	Cvar_RegisterVariable (&pd_maxfps);
 
 	Cmd_AddCommand ("menu_main", M_Menu_Main_f);
 	Cmd_AddCommand ("menu_singleplayer", M_Menu_SinglePlayer_f);

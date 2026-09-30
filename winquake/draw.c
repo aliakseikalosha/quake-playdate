@@ -225,6 +225,44 @@ void Draw_Character (int x, int y, int num)
 
 /*
 ================
+Draw_CharacterScaled
+
+Draw_Character with every pixel drawn as a scale x scale block (port: the options
+menu). Characters that do not fit on the screen entirely are not drawn.
+================
+*/
+void Draw_CharacterScaled (int x, int y, int num, int scale)
+{
+	byte	*dest, *source;
+	int		row, col, i, j, k;
+
+	num &= 255;
+	if (r_pixbytes != 1 || x < 0 || y < 0 ||
+		x + 8*scale > (int)vid.conwidth || y + 8*scale > (int)vid.conheight)
+		return;
+
+	DRAW_TOUCH (y, 8*scale);
+
+	row = num>>4;
+	col = num&15;
+	source = draw_chars + (row<<10) + (col<<3);
+	dest = vid.conbuffer + y*vid.conrowbytes + x;
+
+	for (i=0 ; i<8 ; i++, source += 128)
+	{
+		for (k=0 ; k<scale ; k++, dest += vid.conrowbytes)
+		{
+			for (j=0 ; j<8 ; j++)
+			{
+				if (source[j])
+					memset (dest + j*scale, source[j], scale);
+			}
+		}
+	}
+}
+
+/*
+================
 Draw_String
 ================
 */

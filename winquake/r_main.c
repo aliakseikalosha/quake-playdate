@@ -123,6 +123,10 @@ cvar_t	r_timegraph = {"r_timegraph","0"};
 cvar_t	r_graphheight = {"r_graphheight","10"};
 cvar_t	r_clearcolor = {"r_clearcolor","2"};
 cvar_t	r_waterwarp = {"r_waterwarp","1"};
+cvar_t	r_interlace = {"r_interlace","1", true};	// port: "Interlaced" in the options menu (on by default)
+int		r_interlace_skip = 2;	// see d_iface.h
+cvar_t	r_maxdist = {"r_maxdist","512", true};	// port: "Draw distance" in the options menu, 0 = unlimited
+float	r_maxdist2;				// r_maxdist squared for this frame, 0 = unlimited
 cvar_t	r_fullbright = {"r_fullbright","0"};
 cvar_t	r_drawentities = {"r_drawentities","1"};
 cvar_t	r_drawviewmodel = {"r_drawviewmodel","1"};
@@ -202,6 +206,8 @@ void R_Init (void)
 	Cvar_RegisterVariable (&r_ambient);
 	Cvar_RegisterVariable (&r_clearcolor);
 	Cvar_RegisterVariable (&r_waterwarp);
+	Cvar_RegisterVariable (&r_interlace);
+	Cvar_RegisterVariable (&r_maxdist);
 	Cvar_RegisterVariable (&r_fullbright);
 	Cvar_RegisterVariable (&r_drawentities);
 	Cvar_RegisterVariable (&r_drawviewmodel);
@@ -514,6 +520,59 @@ void R_MarkLeaves (void)
 R_DrawEntitiesOnList
 =============
 */
+/*
+=============
+R_BoxBeyond
+
+True when the box lies entirely beyond the render distance (r_maxdist)
+=============
+*/
+qboolean R_BoxBeyond (const vec3_t mins, const vec3_t maxs)
+{
+	float	d, dist2 = 0;
+	int		j;
+
+	if (r_maxdist2 <= 0)
+		return false;
+	for (j=0 ; j<3 ; j++)
+	{
+		if (r_origin[j] < mins[j])
+			d = mins[j] - r_origin[j];
+		else if (r_origin[j] > maxs[j])
+			d = r_origin[j] - maxs[j];
+		else
+			continue;
+		dist2 += d * d;
+	}
+	return dist2 > r_maxdist2;
+}
+
+// an alias model's or sprite's bounds at its origin, grown to cover any rotation (alias
+// models only have a nominal +-16 box, so allow some more)
+static qboolean R_EntityBeyond (entity_t *ent)
+{
+	vec3_t	mins, maxs;
+	float	r = 0;
+	int		j;
+
+	if (r_maxdist2 <= 0)
+		return false;
+	for (j=0 ; j<3 ; j++)
+	{
+		if (-ent->model->mins[j] > r)
+			r = -ent->model->mins[j];
+		if (ent->model->maxs[j] > r)
+			r = ent->model->maxs[j];
+	}
+	r = r * 1.8f + 32;
+	for (j=0 ; j<3 ; j++)
+	{
+		mins[j] = ent->origin[j] - r;
+		maxs[j] = ent->origin[j] + r;
+	}
+	return R_BoxBeyond (mins, maxs);
+}
+
 void R_DrawEntitiesOnList (void)
 {
 	int			i, j;
@@ -533,6 +592,9 @@ void R_DrawEntitiesOnList (void)
 
 		if (currententity == &cl_entities[cl.viewentity])
 			continue;	// don't draw the player
+
+		if (R_EntityBeyond (currententity))
+			continue;	// past the render distance
 
 		switch (currententity->model->type)
 		{
@@ -767,6 +829,9 @@ void R_DrawBEntitiesOnList (void)
 				minmaxs[3+j] = currententity->origin[j] +
 						clmodel->maxs[j];
 			}
+
+			if (R_BoxBeyond (minmaxs, minmaxs + 3))
+				break;	// past the render distance
 
 			clipflags = R_BmodelCheckBBox (clmodel, minmaxs);
 

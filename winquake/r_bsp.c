@@ -459,6 +459,54 @@ static msurface_t	*r_worldsurfaces;
 #define SURF_MARKED(surf)	((surf)->visframe == r_framecount)
 #endif
 
+/*
+Render distance (r_maxdist): a node whose bounding box lies entirely beyond it, and
+everything under it, is "far". Far leaves mark only their sky surfaces (so the sky
+still shows behind culled geometry) and store no efrags; a surface is still drawn
+when a near leaf marks it too.
+*/
+static qboolean	r_nodefar;
+
+static qboolean R_NodeBeyond (mnode_t *node)
+{
+	float	d, dist2 = 0;
+	int		j;
+
+	for (j=0 ; j<3 ; j++)
+	{
+		if (r_origin[j] < node->minmaxs[j])
+			d = node->minmaxs[j] - r_origin[j];
+		else if (r_origin[j] > node->minmaxs[3+j])
+			d = r_origin[j] - node->minmaxs[3+j];
+		else
+			continue;
+		dist2 += d * d;
+	}
+	return dist2 > r_maxdist2;
+}
+
+// the leaf's surfaces: all of them, or only the sky when the leaf is far
+#define R_MARK_LEAF_SURFACES(mark, c) \
+	do { \
+		if (!r_nodefar) \
+		{ \
+			do \
+			{ \
+				SURF_MARK (*mark); \
+				mark++; \
+			} while (--c); \
+		} \
+		else \
+		{ \
+			do \
+			{ \
+				if ((*mark)->flags & SURF_DRAWSKY) \
+					SURF_MARK (*mark); \
+				mark++; \
+			} while (--c); \
+		} \
+	} while (0)
+
 
 #ifdef PD_FAST_FACES
 /*
@@ -522,6 +570,7 @@ them back once the traversal is over
 */
 static void R_RecursiveWorldNode (rworld_t *w, mnode_t *node, int clipflags)
 {
+	qboolean	isfar = false;
 	int			i, c, side;
 	mplane_t	*plane;
 	msurface_t	*surf, **mark;
@@ -545,6 +594,9 @@ static void R_RecursiveWorldNode (rworld_t *w, mnode_t *node, int clipflags)
 			return;
 	}
 
+	if (r_maxdist2 > 0 && !r_nodefar && R_NodeBeyond (node))
+		r_nodefar = isfar = true;
+
 // if a leaf node, draw stuff
 	if (node->contents < 0)
 	{
@@ -557,17 +609,11 @@ static void R_RecursiveWorldNode (rworld_t *w, mnode_t *node, int clipflags)
 
 		PROF_BEGINF(P_WMARK);
 		if (c)
-		{
-			do
-			{
-				SURF_MARK (*mark);
-				mark++;
-			} while (--c);
-		}
+			R_MARK_LEAF_SURFACES (mark, c);
 		PROF_ENDF(P_WMARK);
 
 	// deal with model fragments in this leaf
-		if (pleaf->efrags)
+		if (pleaf->efrags && !r_nodefar)
 		{
 			PROF_BEGINF(P_WEFRAG);
 			R_StoreEfrags (&pleaf->efrags);
@@ -699,6 +745,9 @@ static void R_RecursiveWorldNode (rworld_t *w, mnode_t *node, int clipflags)
 	// recurse down the back side
 		R_RecursiveWorldNode (w, node->children[!side], clipflags);
 	}
+
+	if (isfar)
+		r_nodefar = false;
 }
 
 #else	// !PD_FAST_FACES
@@ -710,6 +759,7 @@ R_RecursiveWorldNode
 */
 void R_RecursiveWorldNode (mnode_t *node, int clipflags)
 {
+	qboolean	isfar = false;
 	int			i, c, side, *pindex;
 	vec3_t		acceptpt, rejectpt;
 	mplane_t	*plane;
@@ -764,6 +814,9 @@ void R_RecursiveWorldNode (mnode_t *node, int clipflags)
 		}
 	}
 	
+	if (r_maxdist2 > 0 && !r_nodefar && R_NodeBeyond (node))
+		r_nodefar = isfar = true;
+
 // if a leaf node, draw stuff
 	if (node->contents < 0)
 	{
@@ -776,17 +829,11 @@ void R_RecursiveWorldNode (mnode_t *node, int clipflags)
 
 		PROF_BEGINF(P_WMARK);
 		if (c)
-		{
-			do
-			{
-				SURF_MARK (*mark);
-				mark++;
-			} while (--c);
-		}
+			R_MARK_LEAF_SURFACES (mark, c);
 		PROF_ENDF(P_WMARK);
 
 	// deal with model fragments in this leaf
-		if (pleaf->efrags)
+		if (pleaf->efrags && !r_nodefar)
 		{
 			PROF_BEGINF(P_WEFRAG);
 			R_StoreEfrags (&pleaf->efrags);
@@ -918,6 +965,9 @@ void R_RecursiveWorldNode (mnode_t *node, int clipflags)
 	// recurse down the back side
 		R_RecursiveWorldNode (node->children[!side], clipflags);
 	}
+
+	if (isfar)
+		r_nodefar = false;
 }
 
 #endif	// PD_FAST_FACES
@@ -935,6 +985,7 @@ void R_RenderWorld (void)
 	static btofpoly_t	btofpolys[MAX_BTOFPOLYS];
 
 	pbtofpolys = btofpolys;
+	r_nodefar = false;
 
 	currententity = &cl_entities[0];
 	VectorCopy (r_origin, modelorg);

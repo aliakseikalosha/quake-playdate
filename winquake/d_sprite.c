@@ -62,7 +62,7 @@ void D_SpriteDrawSpans (sspan_t *pspan)
 
 		count = pspan->count;
 
-		if (count <= 0)
+		if (count <= 0 || R_ROW_SKIPPED(pspan->v))
 			goto NextSpan;
 
 	// calculate the initial s/z, t/z, 1/z, s, and t and clamp

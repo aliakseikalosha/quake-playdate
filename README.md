@@ -69,9 +69,23 @@ Performance knobs (device build, pass to `cmake`):
 
 ## Settings
 
-The Options menu keeps its settings (view size, brightness, volume, always run, autofire, **texture detail** ...) in `config.cfg` in the game's Data folder. It is written when you leave the Options menu and when the system pauses, locks or terminates the game, and read at the next launch. Key bindings are not saved (they come from `default.cfg` and the port's own button mapping).
+The defaults are the settings the author plays with: texture detail low, interlaced on, draw distance 512, crank speed 1.4, max framerate 30 (plus Quake's own defaults). An existing config.cfg keeps whatever it says; "Reset defaults" goes back to these.
 
-Texture detail: `high` (default, `d_mipcap 0`) or `low` (`d_mipcap 1`, the sharpest mip level is never used; about 1.6 ms per frame faster in the demos, about 3%, with visibly softer textures).
+The Options menu (drawn with a double-size font; the Customize controls, Go to console, Screen size, Invert mouse, Lookspring and Lookstrafe rows are gone, so the console can no longer be opened on the device; `viewsize` and the others keep whatever config.cfg says) keeps its settings (brightness, **crank speed**, volume, always run, autofire, **texture detail**, **interlaced**, **draw distance**, **max framerate** ...) in `config.cfg` in the game's Data folder. It is written when you leave the Options menu and when the system pauses, locks or terminates the game, and read at the next launch. Key bindings are not saved (they come from `default.cfg` and the port's own button mapping).
+
+The Load and Save menus use the same double-size font. A slot shows the level name cut to 15 characters and the kills as `killed/total` (the full 39-character save comment does not fit at that size).
+
+Texture detail: `low` (default, `d_mipcap 1`, the sharpest mip level is never used; about 1.6 ms per frame faster in the demos, about 3%, with visibly softer textures) or `high` (`d_mipcap 0`).
+
+Interlaced: `on` (default, `r_interlace 1`) or `off` (`r_interlace 0`). When on, each frame draws only every other row of the 3D view (alternating odd and even rows), and the other rows keep the previous frame, so moving edges comb slightly. World spans, sky, alias models, sprites and particles all skip the kept rows, and the display does not re-dither them either. The edge scan, world traversal and surface cache builds still run in full, so the gain is less than half: demo1 44.5 -> 39.2 ms per frame on the device (-12%, scan 16.0 -> 11.6 ms). A resized view or a new map always gets one full frame.
+
+Crank speed: degrees of view turn per degree of crank (`crank_speed`, 0.2-3 in steps of 0.2, default 1.4). It replaces the Mouse Speed slider.
+
+Draw distance: a slider over 256, 384, 512, 768, 1024, 1536, 2048, 3072 and unlimited (the right end; `r_maxdist` in Quake units, default 512, 0 = unlimited). World leaves whose bounding box is entirely beyond it are not drawn (except their sky, so the sky still shows behind them), and neither are models, brush entities or particles beyond it; what is culled is drawn black (the background surface uses palette index 0 instead of `r_clearcolor` while a distance is set). A face is still drawn while any near leaf holds it, so the cut follows leaf boundaries rather than a clean line. demo1 is mostly indoors: 768 saves about 0.5 ms per frame there (40.2 -> 39.7); open areas gain more.
+
+Max framerate: 30, 50 or unlimited (`pd_maxfps`, 0 = unlimited): the rate the Playdate calls the game at (`display->setRefreshRate`). The default is 30; the build's `PD_REFRESH_RATE` only applies while the game loads, until the settings are read. A change applies on the next frame, also from the console or config.cfg. Above 30 the battery drains faster, and a higher cap only helps in scenes the game renders in under 33 ms (50) or 20 ms (unlimited).
+
+Under water, slime and lava Quake blends the whole palette 50-60% towards the liquid's colour. On the 1-bit display only the luminance survives, so that blend just squeezed the picture into the midtones (under water black became mid grey and the highlights clipped to white). The port leaves the liquid tint out of the palette (`V_UpdatePalette` in `winquake/view.c`), so the view keeps the full black-to-white range; the underwater warp, and the damage, pickup and powerup flashes, are unchanged.
 
 ## Profiling on the device
 

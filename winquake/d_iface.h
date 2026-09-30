@@ -236,3 +236,9 @@ extern vrect_t	scr_vrect;
 
 extern byte		*r_warpbuffer;
 
+
+// Interlaced rendering (r_interlace): the 3D view rows (in view buffer rows) whose
+// parity equals r_interlace_skip are not drawn this frame and keep the previous
+// frame's pixels and z; 2 = draw every row. Set per frame in R_SetupFrame.
+extern int		r_interlace_skip;
+#define R_ROW_SKIPPED(v)	(((v) & 1) == r_interlace_skip)

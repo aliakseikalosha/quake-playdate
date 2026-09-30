@@ -64,6 +64,9 @@ extern int qembd_lowres_active;
 extern const uint8_t *qembd_lowres_src;
 extern int qembd_lowres_stride;
 extern uint8_t qembd_lowres_pending[];
+/* Row pair p on the LCD holds row p of qembd_lowres_src as it is now. With interlaced
+ * rendering (pending 2) such pairs are not dithered again. */
+extern uint8_t qembd_lowres_shown[];
 
 static const uint8_t var_n[5] = {1, 4, 4, 4, 1};	/* variants per level */
 static const uint8_t var_top[5][4] = {
@@ -267,6 +270,7 @@ void qembd_fillrect(uint8_t *src, uint32_t *clut,
 			pbot[i] = var_bot[lv][v];
 			pat2[i] = (uint16_t)(ptop[i] | pbot[i] << 8);
 		}
+		memset(qembd_lowres_shown, 0, PD_RENDER_HEIGHT / 2);
 #endif
 		memcpy(lum_clut, clut, sizeof(lum_clut));
 		lum_valid = 1;
@@ -324,11 +328,18 @@ void qembd_fillrect(uint8_t *src, uint32_t *clut,
 
 			dither_span(dst, srow, b0, f0, thr_t);
 			dither_span(dbot, sbot, b0, f0, thr_b);
-			if (qembd_lowres_active && qembd_lowres_pending[qy >> 1])
+			if (qembd_lowres_active && qembd_lowres_pending[qy >> 1] == 2 && qembd_lowres_shown[qy >> 1])
+				; /* interlaced: not redrawn this frame, and the LCD still shows it */
+			else if (qembd_lowres_active && qembd_lowres_pending[qy >> 1])
+			{
 				lowres_direct(dst, dbot, qembd_lowres_src + (qy >> 1) * qembd_lowres_stride - (X_OFF >> 1),
 							  f0, f1);
+				qembd_lowres_shown[qy >> 1] = f0 == rb0 && f1 == rb1;
+			}
 			else
 				lowres_pair(dst, dbot, srow, sbot, f0, f1, thr_t, thr_b);
+			if (!qembd_lowres_active || !qembd_lowres_pending[qy >> 1])
+				qembd_lowres_shown[qy >> 1] = 0;
 			dither_span(dst, srow, f1, b1, thr_t);
 			dither_span(dbot, sbot, f1, b1, thr_b);
 			qy += 2;
@@ -337,8 +348,20 @@ void qembd_fillrect(uint8_t *src, uint32_t *clut,
 #endif
 
 		dither_span(dst, srow, b0, b1, threshold[(Y_OFF + qy) & 3]);
+#ifdef PD_LOWRES_3D
+		qembd_lowres_shown[qy >> 1] = 0;
+#endif
 		qy++;
 	}
+}
+
+/* The LCD frame buffer may have been drawn over by the system (menu, lock screen):
+ * dither every row again. */
+void qembd_display_invalidate(void)
+{
+#ifdef PD_LOWRES_3D
+	memset(qembd_lowres_shown, 0, PD_RENDER_HEIGHT / 2);
+#endif
 }
 
 void qembd_refresh()

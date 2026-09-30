@@ -257,12 +257,17 @@ static int golden(const char *path)
 }
 
 /*
- * HMENU=1: the options menu. Presses real keys (Key_Event) and checks navigation, the Texture
- * detail row (d_mipcap), that leaving the menu writes config.cfg with the archived cvars but no key
+ * HMENU=1: the options menu. Presses real keys (Key_Event) and checks navigation, the Crank speed
+ * (crank_speed), Texture detail (d_mipcap), Interlaced (r_interlace) and Draw distance (r_maxdist)
+ * rows, that leaving the menu writes config.cfg with the archived cvars but no key
  * bindings, that the file reloads, and that "Reset to defaults" puts the option back.
  */
 extern int options_cursor;
 extern cvar_t d_mipcap;
+extern cvar_t r_interlace;
+extern cvar_t r_maxdist;
+extern cvar_t crank_speed;
+extern cvar_t pd_maxfps;
 
 static int menu_fail;
 #define MCHECK(cond, what) do { if (!(cond)) { printf("FAIL: %s\n", what); menu_fail++; } else printf("ok:   %s\n", what); } while (0)
@@ -362,55 +367,149 @@ static int menu_test(void)
 	MCHECK(key_dest == key_menu, "options menu opens");
 	MCHECK(options_cursor == 0, "cursor starts on the first row");
 
-	for (i = 0; i < 13; i++)
-		press(K_DOWNARROW);
-	MCHECK(options_cursor == 13, "13 x down reaches the Texture detail row");
-	MCHECK(d_mipcap.value == 0, "texture detail starts on high (d_mipcap 0)");
+	dump_lcd("options-top");
 	MCHECK(!host_options_dirty, "nothing changed yet");
-
-	dump_lcd("high");
+	for (i = 0; i < 2; i++)
+		press(K_DOWNARROW);
+	MCHECK(options_cursor == 2, "2 x down reaches the Crank speed row");
+	MCHECK(crank_speed.value == 1.4f, "crank speed starts at 1.4");
 	press(K_RIGHTARROW);
-	dump_lcd("low");
-	MCHECK(d_mipcap.value == 1, "right: low (d_mipcap 1)");
-	MCHECK(host_options_dirty, "the change marks the options dirty");
+	MCHECK(crank_speed.value == 1.6f, "right: 1.6");
 	press(K_LEFTARROW);
-	MCHECK(d_mipcap.value == 0, "left: high again");
+	press(K_LEFTARROW);
+	MCHECK(crank_speed.value == 1.2f, "left twice: 1.2");
+	for (i = 0; i < 30; i++)
+		press(K_LEFTARROW);
+	MCHECK(crank_speed.value == 0.2f, "crank speed stops at 0.2");
+	for (i = 0; i < 30; i++)
+		press(K_RIGHTARROW);
+	MCHECK(crank_speed.value == 3, "crank speed stops at 3");
+	press(K_LEFTARROW);
+	press(K_LEFTARROW);
+	MCHECK(crank_speed.value == 2.6f, "left twice: 2.6");
+
+	for (i = 0; i < 5; i++)
+		press(K_DOWNARROW);
+	MCHECK(options_cursor == 7, "5 more down reach the Texture detail row");
+	MCHECK(d_mipcap.value == 1, "texture detail starts on low (d_mipcap 1)");
+
+	dump_lcd("low");
+	press(K_RIGHTARROW);
+	dump_lcd("high");
+	MCHECK(d_mipcap.value == 0, "right: high (d_mipcap 0)");
+	MCHECK(host_options_dirty, "changes mark the options dirty");
+	press(K_LEFTARROW);
+	MCHECK(d_mipcap.value == 1, "left: low again");
 	press(K_ENTER);
-	MCHECK(d_mipcap.value == 1, "enter toggles too");
+	MCHECK(d_mipcap.value == 0, "enter toggles too");
+
+	press(K_DOWNARROW);
+	MCHECK(options_cursor == 8, "down reaches the Interlaced row");
+	MCHECK(r_interlace.value == 1, "interlaced starts on");
+	dump_lcd("interlace-on");
+	press(K_RIGHTARROW);
+	dump_lcd("interlace-off");
+	MCHECK(r_interlace.value == 0, "right: interlaced off");
+	press(K_LEFTARROW);
+	MCHECK(r_interlace.value == 1, "left: on again");
+	press(K_ENTER);
+	MCHECK(r_interlace.value == 0, "enter toggles too");
+
+	press(K_DOWNARROW);
+	MCHECK(options_cursor == 9, "down reaches the Draw distance row");
+	dump_lcd("options-bottom");
+	MCHECK(r_maxdist.value == 512, "draw distance starts at 512");
+	press(K_RIGHTARROW);
+	MCHECK(r_maxdist.value == 768, "right: 768");
+	for (i = 0; i < 20; i++)
+		press(K_RIGHTARROW);
+	MCHECK(r_maxdist.value == 0, "the right end is unlimited (r_maxdist 0)");
+	press(K_LEFTARROW);
+	MCHECK(r_maxdist.value == 3072, "left: 3072");
+	for (i = 0; i < 20; i++)
+		press(K_LEFTARROW);
+	MCHECK(r_maxdist.value == 256, "stops at 256");
+	press(K_RIGHTARROW);
+	press(K_RIGHTARROW);
+	press(K_RIGHTARROW);
+	MCHECK(r_maxdist.value == 768, "right x3: 768");
+
+	press(K_DOWNARROW);
+	MCHECK(options_cursor == 10, "down reaches the Max framerate row");
+	MCHECK(pd_maxfps.value == 30, "max framerate starts at 30");
+	press(K_LEFTARROW);
+	MCHECK(pd_maxfps.value == 30, "left at 30 stays 30");
+	press(K_RIGHTARROW);
+	MCHECK(pd_maxfps.value == 50, "right: 50");
+	press(K_RIGHTARROW);
+	MCHECK(pd_maxfps.value == 0, "right: unlimited (0)");
+	dump_lcd("options-maxfps");
+	press(K_RIGHTARROW);
+	MCHECK(pd_maxfps.value == 0, "right at unlimited stays unlimited");
+	press(K_LEFTARROW);
+	MCHECK(pd_maxfps.value == 50, "left: 50");
 
 	press(K_DOWNARROW);
 	MCHECK(options_cursor == 0, "down from the last row wraps to the first (no Video Options row here)");
 	press(K_UPARROW);
-	MCHECK(options_cursor == 13, "up from the first row lands on Texture detail");
+	MCHECK(options_cursor == 10, "up from the first row lands on Max framerate");
 
 	MCHECK(slurp(path) == NULL, "no config.cfg before leaving the menu");
 	press(K_ESCAPE);
 	MCHECK(!host_options_dirty, "leaving the menu clears the dirty flag");
 	cfg = slurp(path);
 	MCHECK(cfg != NULL, "leaving the menu writes config.cfg");
-	MCHECK(cfg && strstr(cfg, "d_mipcap \"1"), "config.cfg holds d_mipcap 1");
+	MCHECK(cfg && strstr(cfg, "d_mipcap \"0"), "config.cfg holds d_mipcap 0");
+	MCHECK(cfg && strstr(cfg, "r_interlace \"0"), "config.cfg holds r_interlace 0");
+	MCHECK(cfg && strstr(cfg, "r_maxdist \"768"), "config.cfg holds r_maxdist 768");
+	MCHECK(cfg && strstr(cfg, "crank_speed \"2.6"), "config.cfg holds crank_speed 2.6");
+	MCHECK(cfg && strstr(cfg, "pd_maxfps \"50"), "config.cfg holds pd_maxfps 50");
 	MCHECK(cfg && strstr(cfg, "cl_autofire"), "config.cfg holds the other archived options");
 	MCHECK(cfg && !strstr(cfg, "bind "), "config.cfg holds no key bindings");
 
-	Cvar_SetValue("d_mipcap", 0);
+	Cvar_SetValue("d_mipcap", 1);
+	Cvar_SetValue("r_interlace", 1);
+	Cvar_SetValue("r_maxdist", 0);
+	Cvar_SetValue("crank_speed", 1);
+	Cvar_SetValue("pd_maxfps", 30);
 	cmd("exec config.cfg\n");
 	run(3);
-	MCHECK(d_mipcap.value == 1, "config.cfg restores d_mipcap 1 (what the next launch does)");
+	MCHECK(d_mipcap.value == 0, "config.cfg restores d_mipcap 0 (what the next launch does)");
+	MCHECK(r_interlace.value == 0, "config.cfg restores r_interlace 0");
+	MCHECK(r_maxdist.value == 768, "config.cfg restores r_maxdist 768");
+	MCHECK(crank_speed.value == 2.6f, "config.cfg restores crank_speed 2.6");
+	MCHECK(pd_maxfps.value == 50, "config.cfg restores pd_maxfps 50");
 
 	/* Reset to defaults puts it back */
 	cmd("menu_options\n");
 	run(3);
-	for (i = 0; i < 20 && options_cursor != 2; i++)	/* the cursor keeps its row when the menu reopens */
+	for (i = 0; i < 20 && options_cursor != 0; i++)	/* the cursor keeps its row when the menu reopens */
 		press(K_DOWNARROW);
-	MCHECK(options_cursor == 2, "cursor on Reset to defaults");
+	MCHECK(options_cursor == 0, "cursor on Reset defaults");
 	press(K_ENTER);
 	run(3);
-	MCHECK(d_mipcap.value == 0, "reset to defaults sets texture detail back to high");
+	MCHECK(d_mipcap.value == 1, "reset to defaults sets texture detail back to low");
+	MCHECK(r_interlace.value == 1, "reset to defaults turns interlaced on");
+	MCHECK(r_maxdist.value == 512, "reset to defaults sets the draw distance back to 512");
+	MCHECK(crank_speed.value == 1.4f, "reset to defaults sets crank speed back to 1.4");
+	MCHECK(pd_maxfps.value == 30, "reset to defaults sets max framerate back to 30");
 	press(K_ESCAPE);
 	cfg = slurp(path);
-	MCHECK(cfg && strstr(cfg, "d_mipcap \"0"), "and the saved file says so");
+	MCHECK(cfg && strstr(cfg, "d_mipcap \"1"), "and the saved file says so");
 
 	remove(path);
+
+	/* the load menu (double-size font): a saved slot and the unused ones */
+	cmd("save s11\n");
+	run(3);
+	cmd("menu_load\n");
+	run(3);
+	MCHECK(key_dest == key_menu, "load menu opens");
+	dump_lcd("load");
+	press(K_ESCAPE);
+	snprintf(path, sizeof(path), "%s/s11.sav", com_gamedir);
+	MCHECK(remove(path) == 0, "save to slot 11 wrote s11.sav");
+
 	printf("%s\n", menu_fail ? "MENU TEST FAILED" : "menu test passed");
 	return menu_fail ? 1 : 0;
 }
@@ -429,6 +528,17 @@ int main(int argc, char **argv)
 	if (qembd_init(1, av) != 0)
 		return 1;
 
+	/* The port's picture options default to low texture detail, interlaced and a draw distance;
+	 * the regression modes compare against the original picture, so switch them off there
+	 * (the menu test checks the real defaults) */
+	if (!getenv("HMENU"))
+		cmd("d_mipcap 0\nr_interlace 0\nr_maxdist 0\n");
+	if (getenv("HINTERLACE"))	/* HINTERLACE=1: every mode below with interlaced rendering */
+		cmd("r_interlace 1\n");
+	if (getenv("HCMD")) {		/* HCMD="...": console commands before any mode below */
+		cmd(getenv("HCMD"));
+		cmd("\n");
+	}
 	if (getenv("HGOLD"))
 		return golden(getenv("HGOLD"));
 	if (getenv("HFRAMES"))
