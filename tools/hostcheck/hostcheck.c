@@ -8,6 +8,9 @@
  *
  *  menu mode (HMENU=1):  keys through the options menu, see menu_test().
  *
+ *  frames mode (HFRAMES=<prefix>):  writes the LCD of a demo playing in real time as PBM pictures,
+ *      see frames_mode(). Used to make docs/demo.gif.
+ *
  *  default mode:  scripted play (walking, console, menus, HUD, view sizes, demos) that, on every
  *      screen update, also checks the lazy low-res upscale (see D_UpscaleScreen in d_scan.c):
  *        1. no view row pair that is still "pending" may differ from the snapshot taken when the
@@ -276,18 +279,12 @@ static char *slurp(const char *path)
 	return buf;
 }
 
-/* HMENUPIC=<prefix> also dumps the 1-bit LCD as <prefix>-<name>.pbm (viewable / convertible) */
-static void dump_lcd(const char *name)
+/* the 1-bit LCD as a PBM (viewable / convertible) */
+static void write_pbm(const char *path)
 {
-	const char *prefix = getenv("HMENUPIC");
-	char path[512];
-	FILE *f;
+	FILE *f = fopen(path, "wb");
 	int y, x;
 
-	if (!prefix)
-		return;
-	snprintf(path, sizeof(path), "%s-%s.pbm", prefix, name);
-	f = fopen(path, "wb");
 	if (!f)
 		return;
 	fprintf(f, "P4\n%d %d\n", W, H);
@@ -298,6 +295,47 @@ static void dump_lcd(const char *name)
 			fputc((uint8_t)~b, f);	/* LCD: 1 = white; PBM: 1 = black */
 		}
 	fclose(f);
+}
+
+/* HMENUPIC=<prefix> also dumps the LCD as <prefix>-<name>.pbm */
+static void dump_lcd(const char *name)
+{
+	const char *prefix = getenv("HMENUPIC");
+	char path[512];
+
+	if (!prefix)
+		return;
+	snprintf(path, sizeof(path), "%s-%s.pbm", prefix, name);
+	write_pbm(path);
+}
+
+/*
+ * HFRAMES=<prefix>: plays demo HDEMO (default 1) in real time on the fake 33 ms clock, as the device
+ * does, and writes the LCD as <prefix>-NNNN.pbm every HEVERY frames (default 2, so 15 pictures per
+ * second) after the first HSKIP frames (default 0), HCOUNT pictures in all (default 100).
+ */
+static int frames_mode(const char *prefix)
+{
+	int demo = getenv("HDEMO") ? atoi(getenv("HDEMO")) : 1;
+	int skip = getenv("HSKIP") ? atoi(getenv("HSKIP")) : 0;
+	int every = getenv("HEVERY") ? atoi(getenv("HEVERY")) : 2;
+	int count = getenv("HCOUNT") ? atoi(getenv("HCOUNT")) : 100;
+	int i, saved = 0;
+	char path[512];
+
+	snprintf(path, sizeof(path), "playdemo demo%d\n", demo);
+	cmd(path);
+	for (i = 0; saved < count && i < 20000; i++) {
+		run(1);
+		if (cls.demoplayback)
+			key_dest = key_game; /* keep the console off the view */
+		if (i >= skip && (i - skip) % every == 0) {
+			snprintf(path, sizeof(path), "%s-%04d.pbm", prefix, saved++);
+			write_pbm(path);
+		}
+	}
+	printf("frames: %d pictures from %d frames -> %s-NNNN.pbm\n", saved, i, prefix);
+	return 0;
 }
 
 static int menu_test(void)
@@ -384,6 +422,8 @@ int main(int argc, char **argv)
 
 	if (getenv("HGOLD"))
 		return golden(getenv("HGOLD"));
+	if (getenv("HFRAMES"))
+		return frames_mode(getenv("HFRAMES"));
 	if (getenv("HMENU"))
 		return menu_test();
 

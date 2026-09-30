@@ -22,6 +22,7 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 #include "quakedef.h"
 #include "r_local.h"
 #include "pdprof.h"
+#include "pd_asm.h"
 
 #if 0
 // FIXME
@@ -783,7 +784,11 @@ Falls back to the list version for r_draworder (debug view).
 */
 
 #define FE_ACTIVE_STACK	96
+#ifdef PD_USE_ASM
+#define FE_SURF_STACK	FE_ACTIVE_STACK	// R_GenerateLine_ARM needs room for every active edge
+#else
 #define FE_SURF_STACK	32
+#endif
 
 typedef struct
 {
@@ -832,9 +837,17 @@ espan_t	**r_spanheads;
 		} \
 	} while (0)
 
+#ifdef PD_ASM_CHECK
+unsigned	pd_asm_ztests;	// how often the check covered the 1/z sort below
+#define FE_ZTEST_COUNT()	(pd_asm_ztests++)
+#else
+#define FE_ZTEST_COUNT()	((void)0)
+#endif
+
 // sort two bmodel surfaces that share a key on 1/z at the current edge
 #define FE_ZTEST(surf_, surf2_, edge_u_, action_newer_front_) \
 	do { \
+		FE_ZTEST_COUNT(); \
 		fu = (float)((edge_u_) - 0xFFFFF) * (1.0f / 0x100000); \
 		newzi = (surf_)->d_ziorigin + fv*(surf_)->d_zistepv + fu*(surf_)->d_zistepu; \
 		newzibottom = newzi * 0.99f; \
@@ -853,6 +866,164 @@ espan_t	**r_spanheads;
 		} \
 	} while (0)
 
+#ifdef PD_USE_ASM
+// one scan line of span generation for R_GenerateLine_ARM (r_edge_arm.S; offsets fixed there)
+typedef struct
+{
+	aedge_t		*act;
+	sentry_t	*stk;
+	signed char	*state;
+	espan_t		**heads;		// NULL: the span lists hang off surf_t.spans
+	surf_t		*surfaces;
+	espan_t		*sp;			// in: next free span, out: after the last one emitted
+	int			iv;
+	edge_t		*tail;
+	int			head_u, tail_u;	// edge_head_u_shift20, edge_tail_u_shift20
+	float		fv;
+	int			bmodelactive;	// out
+} fe_line_t;
+
+void R_GenerateLine_ARM (fe_line_t *g);
+
+// merging a scan line's new edges into the active edge table (R_InsertEdges_ARM)
+typedef struct
+{
+	aedge_t		*act;
+	int			nact, cap;
+	int			j;				// where the search for the next edge's place starts
+	edge_t		*ne;			// in: the new edges; out: NULL, or the next one when act[] is full
+} fe_ins_t;
+
+void R_InsertEdges_ARM (fe_ins_t *g);
+int R_RemoveEdges_ARM (aedge_t *act, int nact, edge_t *list);
+void R_StepEdges_ARM (aedge_t *act, int nact);
+
+#ifdef PD_ASM_CHECK
+/*
+The table upkeep is checked by running the assembly on a copy of the active edge table before the
+C runs on the real one, and comparing the two tables afterwards.
+*/
+static aedge_t	*chk_act;
+static int		chk_nact;
+
+static aedge_t *R_AsmActCopy (aedge_t *act, int nact)
+{
+	if (!chk_act && !(chk_act = malloc ((NUMSTACKEDGES + 2) * sizeof(aedge_t))))
+		Sys_Error ("R_AsmActCopy: out of memory");
+	memcpy (chk_act, act, nact * sizeof(aedge_t));
+	return chk_act;
+}
+
+static void R_AsmActCompare (const char *what, int iv, aedge_t *act, int nact)
+{
+	int		i;
+
+	if (chk_nact != nact)
+	{
+		pd_asm_bad++;
+		pd_asm_mismatch (what, 0, iv, chk_nact, nact);
+		return;
+	}
+	for (i = 0 ; i < nact ; i++)
+		if (memcmp (&chk_act[i], &act[i], sizeof(aedge_t)))
+		{
+			pd_asm_bad++;
+			pd_asm_mismatch (what, i, iv, chk_act[i].u, act[i].u);
+			return;
+		}
+}
+#endif
+
+#ifdef PD_ASM_CHECK
+/*
+Runs the assembly over a copy of the scan line's state and keeps what it produced (span state,
+span list heads, spans); R_AsmLineCompare checks the C's results against that afterwards.
+*/
+static signed char	*chk_state0, *chk_state1;
+static espan_t		**chk_heads0, **chk_heads1;
+static espan_t		*chk_spans, *chk_sp;
+static int			chk_nsurfs, chk_bmodel;
+
+static void R_AsmLineRun (fe_line_t *g)
+{
+	int		n = surface_p - surfaces, i;
+	static int	cap;
+
+	if (n > cap)
+	{
+		chk_state0 = realloc (chk_state0, n);
+		chk_state1 = realloc (chk_state1, n);
+		chk_heads0 = realloc (chk_heads0, n * sizeof(espan_t *));
+		chk_heads1 = realloc (chk_heads1, n * sizeof(espan_t *));
+		if (!chk_state0 || !chk_state1 || !chk_heads0 || !chk_heads1)
+			Sys_Error ("R_AsmLineRun: out of memory");
+		cap = n;
+	}
+	if (!chk_spans && !(chk_spans = malloc (MAXSPANS * sizeof(espan_t))))
+		Sys_Error ("R_AsmLineRun: out of memory");
+	chk_nsurfs = n;
+
+	memcpy (chk_state0, g->state, n);
+	for (i = 0 ; i < n ; i++)
+		chk_heads0[i] = g->heads ? g->heads[i] : surfaces[i].spans;
+
+	chk_sp = g->sp;
+	R_GenerateLine_ARM (g);
+
+	memcpy (chk_state1, g->state, n);
+	for (i = 0 ; i < n ; i++)
+		chk_heads1[i] = g->heads ? g->heads[i] : surfaces[i].spans;
+	memcpy (chk_spans, chk_sp, (g->sp - chk_sp) * sizeof(espan_t));
+	chk_bmodel = g->bmodelactive;
+
+	memcpy (g->state, chk_state0, n);
+	for (i = 0 ; i < n ; i++)
+		if (g->heads)
+			g->heads[i] = chk_heads0[i];
+		else
+			surfaces[i].spans = chk_heads0[i];
+}
+
+static void R_AsmLineCompare (fe_line_t *g, espan_t *csp)
+{
+	espan_t	*asp = g->sp;
+	int		i, n = chk_nsurfs;
+
+	if (asp != csp)
+	{
+		pd_asm_bad++;
+		pd_asm_mismatch ("line-nspans", g->iv, 0, asp - chk_sp, csp - chk_sp);
+		return;
+	}
+	if (memcmp (chk_spans, chk_sp, (csp - chk_sp) * sizeof(espan_t)))
+	{
+		pd_asm_bad++;
+		for (i = 0 ; i < csp - chk_sp ; i++)
+			if (memcmp (&chk_spans[i], &chk_sp[i], sizeof(espan_t)))
+			{
+				pd_asm_mismatch ("line-span", chk_sp[i].u, g->iv, chk_spans[i].count, chk_sp[i].count);
+				break;
+			}
+	}
+	for (i = 0 ; i < n ; i++)
+	{
+		espan_t	*h = g->heads ? g->heads[i] : surfaces[i].spans;
+
+		if (chk_state1[i] != g->state[i] || chk_heads1[i] != h)
+		{
+			pd_asm_bad++;
+			pd_asm_mismatch ("line-surf", i, g->iv, chk_state1[i], g->state[i]);
+		}
+	}
+	if (chk_bmodel != r_bmodelactive)
+	{
+		pd_asm_bad++;
+		pd_asm_mismatch ("line-bmodel", 0, g->iv, chk_bmodel, r_bmodelactive);
+	}
+}
+#endif	// PD_ASM_CHECK
+#endif	// PD_USE_ASM
+
 void R_ScanEdges (void)
 {
 	aedge_t		act_stack[FE_ACTIVE_STACK];
@@ -870,6 +1041,11 @@ void R_ScanEdges (void)
 	edge_t		*ne, *next_edge;
 	surf_t		*s, *surf, *surf2;
 	float		fv, fu, newzi, testzi, newzitop, newzibottom;
+#ifdef PD_USE_ASM
+	fe_line_t	line;
+	int			asm_line;
+#endif
+	int			newedges_done;
 
 	PROF_STK(K_SCAN);
 	if (r_draworder.value)
@@ -919,7 +1095,45 @@ void R_ScanEdges (void)
 		state[1] = 1;
 
 		PROF_BEGINF(P_SEINS);
-		if (newedges[iv])
+		newedges_done = 0;
+#ifdef PD_USE_ASM
+		if (newedges[iv] && PD_ASM_ACTIVE())
+		{
+			fe_ins_t	ins;
+
+			ins.act = act;
+			ins.nact = nact;
+			ins.cap = act_cap;
+			ins.j = 1;
+			ins.ne = newedges[iv];
+#ifdef PD_ASM_CHECK
+			ins.act = R_AsmActCopy (act, nact);
+			ins.cap = NUMSTACKEDGES + 2;
+			R_InsertEdges_ARM (&ins);
+			chk_nact = ins.nact;
+#else
+			for (;;)
+			{
+				R_InsertEdges_ARM (&ins);
+				if (!ins.ne)
+					break;
+			// act[] is full: move it to the heap, as below
+				if (act != act_stack)
+					Sys_Error ("R_ScanEdges: too many active edges");
+				if (!fe_active_heap)
+					fe_active_heap = malloc ((NUMSTACKEDGES + 2) * sizeof(aedge_t));
+				if (!fe_active_heap)
+					Sys_Error ("R_ScanEdges: out of memory");
+				memcpy (fe_active_heap, act_stack, ins.nact * sizeof(aedge_t));
+				act = ins.act = fe_active_heap;
+				act_cap = ins.cap = NUMSTACKEDGES + 2;
+			}
+			nact = ins.nact;
+			newedges_done = 1;
+#endif
+		}
+#endif
+		if (newedges[iv] && !newedges_done)
 		{
 		// merge the new edges (sorted on u) into the active table: each goes before
 		// the first active edge with u >= its own, searching on from the last insertion
@@ -958,145 +1172,184 @@ void R_ScanEdges (void)
 				nact++;
 				j++;
 			} while ((ne = next_edge) != NULL);
+#ifdef PD_ASM_CHECK
+			if (PD_ASM_ACTIVE())
+				R_AsmActCompare ("insert", iv, act, nact);
+#endif
 		}
 		PROF_ENDF(P_SEINS);
 
 		PROF_BEGINF(P_SEGEN);
-	// generate spans: the active surface stack is stk[0] (nearest) ... the background
-		nstk = 1;
-		stk[0].s = &surfaces[1];
-		stk[0].key = surfaces[1].key;
-		stk[0].last_u = edge_head_u_shift20;
-		r_bmodelactive = 0;
-
-		for (i=1 ; act[i].e != &edge_tail ; i++)
+#ifdef PD_USE_ASM
+		asm_line = 0;
+	// the surface stack never holds more entries than there are active edges, and the
+	// assembly does not grow it: busier lines are left to the C
+		if (PD_ASM_ACTIVE() && nact <= stk_cap)
 		{
-			aedge_t	*a = &act[i];
+			line.act = act;
+			line.stk = stk;
+			line.state = state;
+			line.heads = heads_on ? heads : NULL;
+			line.surfaces = surfaces;
+			line.sp = sp;
+			line.iv = iv;
+			line.tail = &edge_tail;
+			line.head_u = edge_head_u_shift20;
+			line.tail_u = edge_tail_u_shift20;
+			line.fv = fv;
+#ifdef PD_ASM_CHECK
+			R_AsmLineRun (&line);	// then the C below runs too, and is compared
+			asm_line = -1;
+#else
+			R_GenerateLine_ARM (&line);
+			sp = line.sp;
+			r_bmodelactive = line.bmodelactive;
+			asm_line = 1;
+#endif
+		}
+		if (asm_line <= 0)
+#endif
+		{
+		// generate spans: the active surface stack is stk[0] (nearest) ... the background
+			nstk = 1;
+			stk[0].s = &surfaces[1];
+			stk[0].key = surfaces[1].key;
+			stk[0].last_u = edge_head_u_shift20;
+			r_bmodelactive = 0;
 
-			if (a->s0)
+			for (i=1 ; act[i].e != &edge_tail ; i++)
 			{
-			// it has a left surface, so a surface is going away for this span
-				surf = &surfaces[a->s0];
+				aedge_t	*a = &act[i];
 
-				if (--state[a->s0] == 0)
+				if (a->s0)
 				{
-					if (surf->insubmodel)
-						r_bmodelactive--;
+				// it has a left surface, so a surface is going away for this span
+					surf = &surfaces[a->s0];
 
-					if (surf == stk[0].s)
+					if (--state[a->s0] == 0)
 					{
-					// emit a span (current top going away)
-						iu = a->u >> 20;
-						if (iu > stk[0].last_u)
-							FE_EMIT (surf, stk[0].last_u, iu);
+						if (surf->insubmodel)
+							r_bmodelactive--;
 
-					// set last_u on the surface below
-						stk[1].last_u = iu;
+						if (surf == stk[0].s)
+						{
+						// emit a span (current top going away)
+							iu = a->u >> 20;
+							if (iu > stk[0].last_u)
+								FE_EMIT (surf, stk[0].last_u, iu);
+
+						// set last_u on the surface below
+							stk[1].last_u = iu;
+						}
+
+						for (k=0 ; stk[k].s != surf ; k++)
+							;
+						nstk--;
+						for ( ; k<nstk ; k++)
+							stk[k] = stk[k+1];
 					}
 
-					for (k=0 ; stk[k].s != surf ; k++)
-						;
-					nstk--;
-					for ( ; k<nstk ; k++)
-						stk[k] = stk[k+1];
+					if (!a->s1)
+						continue;
 				}
 
 				if (!a->s1)
 					continue;
-			}
 
-			if (!a->s1)
-				continue;
+			// it's adding a new surface in, so find the correct place
+				surf = &surfaces[a->s1];
 
-		// it's adding a new surface in, so find the correct place
-			surf = &surfaces[a->s1];
+				if (++state[a->s1] != 1)
+					continue;
 
-			if (++state[a->s1] != 1)
-				continue;
+				if (surf->insubmodel)
+					r_bmodelactive++;
 
-			if (surf->insubmodel)
-				r_bmodelactive++;
-
-			{
-				int		key = surf->key;
-
-				p = 0;
-				surf2 = stk[0].s;
-
-				if (key < stk[0].key)
-					goto newtop;
-
-			// if it's two surfaces on the same plane, the one that's already
-			// active is in front, so keep going unless it's a bmodel
-				if (surf->insubmodel && key == stk[0].key)
 				{
-				// must be two bmodels in the same leaf; sort on 1/z
-					FE_ZTEST (surf, surf2, a->u, goto newtop);
-				}
+					int		key = surf->key;
+
+					p = 0;
+					surf2 = stk[0].s;
+
+					if (key < stk[0].key)
+						goto newtop;
+
+				// if it's two surfaces on the same plane, the one that's already
+				// active is in front, so keep going unless it's a bmodel
+					if (surf->insubmodel && key == stk[0].key)
+					{
+					// must be two bmodels in the same leaf; sort on 1/z
+						FE_ZTEST (surf, surf2, a->u, goto newtop);
+					}
 
 continue_search:
-				do
-				{
-					p++;
-				} while (key > stk[p].key);
+					do
+					{
+						p++;
+					} while (key > stk[p].key);
 
-				surf2 = stk[p].s;
+					surf2 = stk[p].s;
 
-				if (key == stk[p].key)
-				{
-					if (!surf->insubmodel)
+					if (key == stk[p].key)
+					{
+						if (!surf->insubmodel)
+							goto continue_search;
+
+					// must be two bmodels in the same leaf; sort on 1/z
+						FE_ZTEST (surf, surf2, a->u, goto gotposition);
+
 						goto continue_search;
+					}
 
-				// must be two bmodels in the same leaf; sort on 1/z
-					FE_ZTEST (surf, surf2, a->u, goto gotposition);
-
-					goto continue_search;
-				}
-
-				goto gotposition;
+					goto gotposition;
 
 newtop:
-			// emit a span (obscures current top)
-				iu = a->u >> 20;
+				// emit a span (obscures current top)
+					iu = a->u >> 20;
 
-				if (iu > stk[0].last_u)
-					FE_EMIT (stk[0].s, stk[0].last_u, iu);
+					if (iu > stk[0].last_u)
+						FE_EMIT (stk[0].s, stk[0].last_u, iu);
 
 gotposition:
-			// insert before stk[p]; a surface put on top starts its span here
-				if (nstk == stk_cap)
-				{
-					if (stk == stk_stack)
+				// insert before stk[p]; a surface put on top starts its span here
+					if (nstk == stk_cap)
 					{
-						if (!fe_surf_heap)
-							fe_surf_heap = malloc ((NUMSTACKSURFACES + 1) * sizeof(sentry_t));
-						if (!fe_surf_heap)
-							Sys_Error ("R_ScanEdges: out of memory");
-						memcpy (fe_surf_heap, stk_stack, nstk * sizeof(sentry_t));
-						stk = fe_surf_heap;
-						stk_cap = NUMSTACKSURFACES + 1;
+						if (stk == stk_stack)
+						{
+							if (!fe_surf_heap)
+								fe_surf_heap = malloc ((NUMSTACKSURFACES + 1) * sizeof(sentry_t));
+							if (!fe_surf_heap)
+								Sys_Error ("R_ScanEdges: out of memory");
+							memcpy (fe_surf_heap, stk_stack, nstk * sizeof(sentry_t));
+							stk = fe_surf_heap;
+							stk_cap = NUMSTACKSURFACES + 1;
+						}
+						else
+							Sys_Error ("R_ScanEdges: surface stack overflow");
 					}
-					else
-						Sys_Error ("R_ScanEdges: surface stack overflow");
+					for (k=nstk ; k>p ; k--)
+						stk[k] = stk[k-1];
+					stk[p].s = surf;
+					stk[p].key = key;
+					stk[p].last_u = (p == 0) ? (a->u >> 20) : 0;
+					nstk++;
 				}
-				for (k=nstk ; k>p ; k--)
-					stk[k] = stk[k-1];
-				stk[p].s = surf;
-				stk[p].key = key;
-				stk[p].last_u = (p == 0) ? (a->u >> 20) : 0;
-				nstk++;
 			}
+
+		// now that we've reached the right edge of the screen, we're done with any
+		// unfinished surfaces, so emit a span for whatever's on top
+			iu = edge_tail_u_shift20;
+			if (iu > stk[0].last_u)
+				FE_EMIT (stk[0].s, stk[0].last_u, iu);
+
+		// reset spanstate for all surfaces in the surface stack (not the background)
+			for (k=0 ; k<nstk ; k++)
+				state[stk[k].s - surfaces] = 0;
 		}
-
-	// now that we've reached the right edge of the screen, we're done with any
-	// unfinished surfaces, so emit a span for whatever's on top
-		iu = edge_tail_u_shift20;
-		if (iu > stk[0].last_u)
-			FE_EMIT (stk[0].s, stk[0].last_u, iu);
-
-	// reset spanstate for all surfaces in the surface stack (not the background)
-		for (k=0 ; k<nstk ; k++)
-			state[stk[k].s - surfaces] = 0;
+#ifdef PD_ASM_CHECK
+		if (asm_line < 0)
+			R_AsmLineCompare (&line, sp);
+#endif
 		PROF_ENDF(P_SEGEN);
 
 		if (iv == bottom)
@@ -1135,8 +1388,16 @@ gotposition:
 		}
 
 		PROF_BEGINF(P_SEREM);
+#if defined(PD_USE_ASM) && !defined(PD_ASM_CHECK)
+		if (removeedges[iv] && PD_ASM_ACTIVE())
+			nact = R_RemoveEdges_ARM (act, nact, removeedges[iv]);
+		else
+#endif
 		if (removeedges[iv])
 		{
+#ifdef PD_ASM_CHECK
+			chk_nact = R_RemoveEdges_ARM (R_AsmActCopy (act, nact), nact, removeedges[iv]);
+#endif
 			for (ne = removeedges[iv] ; ne ; ne = ne->nextremove)
 			{
 				for (k=1 ; act[k].e != ne ; k++)
@@ -1145,6 +1406,9 @@ gotposition:
 				for ( ; k<nact ; k++)
 					act[k] = act[k+1];
 			}
+#ifdef PD_ASM_CHECK
+			R_AsmActCompare ("remove", iv, act, nact);
+#endif
 		}
 		PROF_ENDF(P_SEREM);
 
@@ -1152,8 +1416,17 @@ gotposition:
 
 	// step the active edges and keep them sorted: an edge that ends up left of
 	// its predecessor is moved back to where it belongs
+#if defined(PD_USE_ASM) && !defined(PD_ASM_CHECK)
+		if (PD_ASM_ACTIVE())
+			R_StepEdges_ARM (act, nact);
+		else
+#endif
 		if (nact > 2)
 		{
+#ifdef PD_ASM_CHECK
+			R_StepEdges_ARM (R_AsmActCopy (act, nact), nact);
+			chk_nact = nact;
+#endif
 			for (i=1 ; i<nact ; i++)
 			{
 				aedge_t	moved;
@@ -1169,6 +1442,9 @@ gotposition:
 					act[k] = act[k-1];
 				act[j+1] = moved;
 			}
+#ifdef PD_ASM_CHECK
+			R_AsmActCompare ("step", iv, act, nact);
+#endif
 		}
 		PROF_ENDF(P_SESTEP);
 	}

@@ -25,6 +25,7 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 #include "r_local.h"
 #include "d_local.h"
 #include "pdprof.h"
+#include "pd_asm.h"
 
 unsigned char	*r_turb_pbase, *r_turb_pdest;
 fixed16_t		r_turb_s, r_turb_t, r_turb_sstep, r_turb_tstep;
@@ -403,6 +404,10 @@ the next span's record is requested before this span's set-up and only used afte
 #define SPAN_TOUCH_DONE(sink)	((void)0)
 #endif
 
+#ifdef PD_USE_ASM
+#define D_DrawSpans8	D_DrawSpans8_C	// the reference for D_DrawSpans8_ARM, see below
+#endif
+
 void D_DrawSpans8 (espan_t *pspan)
 {
 	int		count, spancount;
@@ -561,6 +566,108 @@ void D_DrawSpans8 (espan_t *pspan)
 	}
 	while ((pspan = pnext));
 }
+
+#ifdef PD_USE_ASM
+#undef D_DrawSpans8
+
+// what D_DrawSpans8_ARM (d_scan_arm.S) reads; the offsets are fixed in the assembly
+typedef struct
+{
+	float		sdivzorigin, sdivzstepv, sdivzstepu;
+	float		tdivzorigin, tdivzstepv, tdivzstepu;
+	float		ziorigin, zistepv, zistepu;
+	fixed16_t	sadjust, tadjust, bbextents, bbextentt;
+	pixel_t		*cacheblock;
+	int			cachewidth;
+	pixel_t		*viewbuffer;
+	int			screenwidth;
+} d_spanparms_t;
+
+void D_DrawSpans8_ARM (espan_t *pspan, const d_spanparms_t *p);
+
+#ifdef PD_ASM_CHECK
+/*
+Runs the C version over the spans the assembly just drew and counts the pixels that differ (the
+picture keeps the C pixels). pixbytes 1: view buffer, 2: z buffer.
+*/
+static void D_AsmCheckSpans (const char *what, espan_t *pspan, void (*ref)(espan_t *),
+	byte *base, int rowbytes, int pixbytes)
+{
+	static byte	*saved;
+	static int	savedsize;
+	espan_t		*sp;
+	int			n = 0, i;
+
+	for (sp = pspan ; sp ; sp = sp->pnext)
+		if (sp->count > 0)
+			n += sp->count * pixbytes;
+	if (n > savedsize)
+	{
+		saved = realloc (saved, n);
+		savedsize = saved ? n : 0;
+		if (!saved)
+			Sys_Error ("D_AsmCheckSpans: out of memory");
+	}
+	n = 0;
+	for (sp = pspan ; sp ; sp = sp->pnext)
+		if (sp->count > 0)
+		{
+			memcpy (saved + n, base + sp->v * rowbytes + sp->u * pixbytes, sp->count * pixbytes);
+			n += sp->count * pixbytes;
+		}
+
+	ref (pspan);
+
+	n = 0;
+	for (sp = pspan ; sp ; sp = sp->pnext)
+		if (sp->count > 0)
+		{
+			byte	*p = base + sp->v * rowbytes + sp->u * pixbytes;
+
+			for (i = 0 ; i < sp->count * pixbytes ; i++)
+				if (saved[n + i] != p[i])
+				{
+					pd_asm_bad++;
+					pd_asm_mismatch (what, sp->u + i / pixbytes, sp->v, saved[n + i], p[i]);
+				}
+			n += sp->count * pixbytes;
+		}
+}
+#endif
+
+void D_DrawSpans8 (espan_t *pspan)
+{
+	d_spanparms_t	p;
+
+	if (!PD_ASM_ACTIVE())
+	{
+		D_DrawSpans8_C (pspan);
+		return;
+	}
+
+	p.sdivzorigin = d_sdivzorigin;
+	p.sdivzstepv = d_sdivzstepv;
+	p.sdivzstepu = d_sdivzstepu;
+	p.tdivzorigin = d_tdivzorigin;
+	p.tdivzstepv = d_tdivzstepv;
+	p.tdivzstepu = d_tdivzstepu;
+	p.ziorigin = d_ziorigin;
+	p.zistepv = d_zistepv;
+	p.zistepu = d_zistepu;
+	p.sadjust = sadjust;
+	p.tadjust = tadjust;
+	p.bbextents = bbextents;
+	p.bbextentt = bbextentt;
+	p.cacheblock = cacheblock;
+	p.cachewidth = cachewidth;
+	p.viewbuffer = (pixel_t *)d_viewbuffer;
+	p.screenwidth = screenwidth;
+	D_DrawSpans8_ARM (pspan, &p);
+#ifdef PD_ASM_CHECK
+	D_AsmCheckSpans ("spans", pspan, D_DrawSpans8_C, (byte *)d_viewbuffer, screenwidth, 1);
+#endif
+}
+#endif	// PD_USE_ASM
 
 /*
 =============

@@ -55,11 +55,24 @@ option(PD_FAST_FACES "Stack-based world face edge emission" ON)
 # Surface cache bitmaps built row by row (full-line stores), see winquake/r_surf.c
 option(PD_FAST_SURFACES "Row-order surface cache build" ON)
 
+# Hand-written Thumb-2 versions of the hottest loops (winquake/*_arm.S, see winquake/pd_asm.h);
+# device builds only. With PD_PROFILE, PD_ASM_AB picks them or the C versions frame by frame
+# (compare with scripts/pd-report.py --ab) and PD_ASM_CHECK runs both and counts differing pixels.
+option(PD_ASM "Use the ARM assembly versions of hot loops on the device" ON)
+option(PD_ASM_AB "With PD_PROFILE and PD_ASM: assembly on half of the frames, C on the others" OFF)
+option(PD_ASM_CHECK "With PD_PROFILE and PD_ASM: check the assembly against the C on every call" OFF)
+if(PD_ASM AND TOOLCHAIN STREQUAL "armgcc")
+	set(PD_ASM_BUILD ON)
+else()
+	set(PD_ASM_BUILD OFF)
+endif()
+
 option(PD_PROFILE "Build the on-device profiler" OFF)
 option(PD_PROFILE_FINE "With PD_PROFILE: also time world faces, edge scan parts, surface builds, server and QuakeC builtins (adds ~2 ms/frame of timer overhead)" OFF)
 option(PD_BENCH "With PD_PROFILE: run the demos as timedemos" OFF)
 set(PD_BENCH_CMDS "" CACHE STRING "With PD_BENCH: console commands run before the demo (separate with ;)")
 set(PD_BENCH_COUNT 3 CACHE STRING "With PD_BENCH: how many of demo1..demo3 to play (1-3)")
+set(PD_BENCH_FIRST 1 CACHE STRING "With PD_BENCH: the demo to start with (1-3)")
 
 add_compile_definitions(
 	QEMBD_PLAYDATE=1
@@ -67,10 +80,14 @@ add_compile_definitions(
 	$<$<BOOL:${PD_FAST_ALIAS}>:PD_FAST_ALIAS=1>
 	$<$<BOOL:${PD_FAST_FACES}>:PD_FAST_FACES=1>
 	$<$<BOOL:${PD_FAST_SURFACES}>:PD_FAST_SURFACES=1>
+	$<$<BOOL:${PD_ASM_BUILD}>:PD_ASM=1>
+	$<$<AND:$<BOOL:${PD_ASM_BUILD}>,$<BOOL:${PD_PROFILE}>,$<BOOL:${PD_ASM_AB}>>:PD_ASM_AB=1>
+	$<$<AND:$<BOOL:${PD_ASM_BUILD}>,$<BOOL:${PD_PROFILE}>,$<BOOL:${PD_ASM_CHECK}>>:PD_ASM_CHECK=1>
 	$<$<BOOL:${PD_PROFILE}>:PD_PROFILE=1>
 	$<$<AND:$<BOOL:${PD_PROFILE}>,$<BOOL:${PD_PROFILE_FINE}>>:PD_PROFILE_FINE=1>
 	$<$<AND:$<BOOL:${PD_PROFILE}>,$<BOOL:${PD_BENCH}>>:PD_BENCH=1>
 	PD_BENCH_COUNT=${PD_BENCH_COUNT}
+	PD_BENCH_FIRST=${PD_BENCH_FIRST}
 	$<$<BOOL:${PD_BENCH_CMDS}>:PD_BENCH_CMDS=\"${PD_BENCH_CMDS}\">
 	TARGET_EXTENSION=1
 	PD_RENDER_WIDTH=${PD_RENDER_WIDTH}

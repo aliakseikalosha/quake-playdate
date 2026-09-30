@@ -80,6 +80,14 @@ else()
 	)
 endif()
 
+# Thumb-2 versions of hot loops for the Playdate (see pd_asm.h)
+if(PD_ASM_BUILD)
+	list(APPEND WQ_ASM_SRCS
+		d_scan_arm.S
+		r_edge_arm.S
+	)
+endif()
+
 add_library(winquake OBJECT ${WQ_SRCS} ${WQ_ASM_SRCS})
 
 target_compile_options(winquake PRIVATE ${OPTS})

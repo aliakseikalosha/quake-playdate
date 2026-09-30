@@ -8,6 +8,7 @@
 #include <r_local.h>
 #include "pd_port.h"
 #include "pdprof.h"
+#include "pd_asm.h"
 
 uint32_t pdprof_acc[P_NSECT];
 uint32_t pdprof_t0[P_NSECT];
@@ -51,6 +52,25 @@ static const char *const cnt_names[C_NCNT] = {"n_spans", "n_pixels", "n_cbuild",
 	"n_nodes", "n_leaves", "n_marks", "n_nsurfs", "n_faces", "n_qcops", "n_qccalls", "n_amodels", "n_averts", "n_atris", "n_lpq", "n_lphit", "n_apix", "b_new", "b_dlight", "b_anim", "b_clear", "t_new", "t_dlight", "t_anim", "t_clear"};
 
 static SDFile *pf;
+
+#if defined(PD_ASM_AB) || defined(PD_ASM_CHECK)
+/* see winquake/pd_asm.h */
+int pd_asm_on = 1;
+unsigned pd_asm_bad;
+static unsigned asm_bad_logged;
+static void pf_line(const char *fmt, ...);
+
+void pd_asm_mismatch(const char *what, int u, int v, int got, int want)
+{
+	if (asm_bad_logged++ < 40)
+		pf_line("ASMBAD,%d,%s,u=%d,v=%d,asm=%d,c=%d", host_framecount, what, u, v, got, want);
+}
+#define ASM_COL() (pd_asm_on)
+#define ASM_BAD_COL() ((int)pd_asm_bad)
+#else
+#define ASM_COL() (-1)
+#define ASM_BAD_COL() (-1)
+#endif
 static uint32_t last_entry, entry_ms, last_hostframe, base_ms;
 static char batch[3072];
 static int blen, bcount;
@@ -490,6 +510,56 @@ static void micro_overlap_kinds(uint8_t *b)
 }
 
 
+/*
+ * Is PLD a real prefetch here? A cold line is requested (PLD, or an early LDR into a register that
+ * is not read until later) before 32 loads from cached lines, or only loaded after them. If PLD
+ * starts a line fill that the cached loads can run under, "pld" is close to "loads alone".
+ */
+static void micro_pld(uint8_t *b)
+{
+	enum { N = 1024, NL = 8192 };
+	volatile uint32_t *cold = (volatile uint32_t *)b;			/* 256 KB: every line a miss */
+	volatile uint8_t *hot = b + 262144 - 4096;
+	uint32_t sum = 0;
+	float t0, t1;
+	int i, k, mode;
+	static const char *const names[] = {"loads alone", "loads then cold load", "early ldr", "pld", "pld + 16 alu"};
+	double res[5];
+	char line[300];
+	int n = 0;
+
+	for (mode = 0; mode < 5; mode++) {
+		qembd_pd->system->resetElapsedTime();
+		t0 = pdprof_elapsed();
+		for (i = 0; i < N; i++) {
+			volatile uint32_t *c = &cold[((i * 40503u) & (NL - 1)) * 8];
+			uint32_t y = 0;
+
+			if (mode == 2)
+				__asm__ volatile("ldr %0, [%1]" : "=r"(y) : "r"(c));
+			else if (mode >= 3)
+				__asm__ volatile("pld [%0]" : : "r"(c));
+			if (mode == 4)
+				MB_WORK(sum);
+			for (k = 0; k < 32; k++)
+				sum += hot[(k * 61 + i) & 2047];
+			if (mode == 2)
+				__asm__ volatile("" : : "r"(y));
+			if (mode != 0 && mode != 2)
+				y = *c;
+			sum += y;
+		}
+		t1 = pdprof_elapsed();
+		res[mode] = (t1 - t0) * 1e9 / N;
+	}
+	n += snprintf(line + n, sizeof(line) - n, "MICRO,pld (ns per iteration of 32 cached loads + one cold line):");
+	for (mode = 0; mode < 5; mode++)
+		n += snprintf(line + n, sizeof(line) - n, " [%s %.0f]", names[mode], res[mode]);
+	pf_line("%s", line);
+	micro_sink = sum;
+}
+
+
 /* Store patterns of the renderer: 16-byte segments down a column of rows versus whole rows */
 static void micro_store_patterns(uint8_t *b)
 {
@@ -712,6 +782,7 @@ static void micro(void)
 	micro_stack();
 	micro_math();
 	micro_overlap_kinds(micro_bss);
+	micro_pld(micro_bss);
 	micro_store_patterns(micro_bss);
 	micro_store_spacing(micro_bss);
 	micro_mem2(micro_bss, sizeof(micro_bss));
@@ -750,7 +821,7 @@ void pdprof_init(void)
 		n += snprintf(hdr + n, sizeof(hdr) - n, ",%s", sect_names[i]);
 	for (i = 0; i < C_NCNT; i++)
 		n += snprintf(hdr + n, sizeof(hdr) - n, ",%s", cnt_names[i]);
-	snprintf(hdr + n, sizeof(hdr) - n, ",edicts,amodels,parts,edges,surfs,cltime,keygame,demo,svedicts");
+	snprintf(hdr + n, sizeof(hdr) - n, ",edicts,amodels,parts,edges,surfs,cltime,keygame,demo,svedicts,asm,asm_bad");
 	pf_line("%s", hdr);
 	micro();
 	base_ms = qembd_pd->system->getCurrentTimeMilliseconds();
@@ -843,7 +914,10 @@ static const char *const bench_demos[] = {"demo1", "demo2", "demo3"};
 #ifndef PD_BENCH_COUNT
 #define PD_BENCH_COUNT 3
 #endif
-#define NUM_BENCH PD_BENCH_COUNT
+#ifndef PD_BENCH_FIRST
+#define PD_BENCH_FIRST 1
+#endif
+#define NUM_BENCH (PD_BENCH_FIRST - 1 + PD_BENCH_COUNT)
 static int bench_i = -1, bench_running;
 
 static void bench_start(int i)
@@ -865,7 +939,7 @@ static void bench_tick(void)
 {
 	if (bench_i < 0) {
 		if (host_framecount > 60)
-			bench_start(0);
+			bench_start(PD_BENCH_FIRST - 1);
 		return;
 	}
 	if (bench_i >= NUM_BENCH)
@@ -875,6 +949,13 @@ static void bench_tick(void)
 		key_dest = key_game; /* keep the console off the view */
 	} else if (bench_running) {
 		pf_line("BENCH,%u,done,%s", (unsigned)(qembd_pd->system->getCurrentTimeMilliseconds() - base_ms), bench_demos[bench_i]);
+#ifdef PD_ASM_CHECK
+		{
+			extern unsigned pd_asm_ztests;
+
+			pf_line("ASMZ,%u bmodel 1/z sorts covered", pd_asm_ztests);
+		}
+#endif
 		if (bench_i + 1 < NUM_BENCH)
 			bench_start(bench_i + 1);
 		else {
@@ -897,6 +978,23 @@ void pdprof_frame_begin(void)
 		__asm__ volatile("mov %0, sp" : "=r"(sp));
 		base_sp = sp;
 	}
+#if defined(PD_ASM_AB)
+	{
+		/* assembly or C by a hash of the frame number: plain odd/even picks up a rhythm in the
+		 * demos (the client section alone differed by over 1 ms between odd and even frames) */
+		uint32_t x = (uint32_t)host_framecount;
+
+		x ^= x >> 16;
+		x *= 0x7feb352du;
+		x ^= x >> 15;
+		x *= 0x846ca68bu;
+		x ^= x >> 16;
+		pd_asm_on = (int)(x & 1);
+	}
+#endif
+#if defined(PD_ASM_AB) || defined(PD_ASM_CHECK)
+	pd_asm_bad = 0;
+#endif
 	entry_ms = qembd_pd->system->getCurrentTimeMilliseconds();
 	qembd_pd->system->resetElapsedTime();
 	PROF_BEGIN(P_FRAME);
@@ -981,10 +1079,11 @@ void pdprof_frame_end(void)
 		n += snprintf(batch + blen + n, sizeof(batch) - blen - n, ",%u", (unsigned)US(pdprof_acc[i]));
 	for (i = 0; i < C_NCNT; i++)
 		n += snprintf(batch + blen + n, sizeof(batch) - blen - n, ",%u", (unsigned)pdprof_cnt[i]);
-	n += snprintf(batch + blen + n, sizeof(batch) - blen - n, ",%d,%d,%d,%d,%d,%d,%d,%d,%d\n",
+	n += snprintf(batch + blen + n, sizeof(batch) - blen - n, ",%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d\n",
 		cl_numvisedicts, r_amodels_drawn, nparts,
 		(int)(edge_p - r_edges), (int)(surface_p - surfaces),
-		(int)(cl.time * 1000), key_dest == key_game, cls.demoplayback, sv.active ? sv.num_edicts : 0);
+		(int)(cl.time * 1000), key_dest == key_game, cls.demoplayback, sv.active ? sv.num_edicts : 0,
+		ASM_COL(), ASM_BAD_COL());
 	if (n > 0 && n < (int)sizeof(batch) - blen)
 		blen += n;
 	if ((host_framecount & 255) == 0)
