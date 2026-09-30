@@ -2,3 +2,5 @@
 Source/pdex.*
 # Game data is not redistributable (shareware pak0.pak is user-supplied)
 Source/id1/
+# Last build number handed out (pdx_buildnumber.cmake)
+.build_number
