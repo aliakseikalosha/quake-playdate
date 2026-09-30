@@ -3,7 +3,8 @@
 
     scripts/pd-report.py bench-results/a.csv               per-demo summary
     scripts/pd-report.py bench-results/a.csv b.csv         ... and b compared with a
-    scripts/pd-report.py --ab bench-results/a.csv          PD_ASM_AB build: C frames vs assembly frames
+    scripts/pd-report.py --ab bench-results/a.csv          PD_ASM_AB / PD_STACK_AB build: frames with the
+                                                           switch off (C, static buffers) vs on
 
 Times are per frame in milliseconds (game code only); "wall" fps includes what the system does
 between frames. Sections nest: scan contains dsurf, which contains cache/spans/zspan/other, and so on.
@@ -79,22 +80,23 @@ def compare(name, a, b):
 
 
 def ab(path):
-    """PD_ASM_AB: frames alternate between the C (asm=0) and the assembly (asm=1) versions."""
+    """PD_ASM_AB / PD_STACK_AB: each frame runs with the switch off (asm=0: the C, the static buffers)
+    or on (asm=1: the assembly, the stack buffers)."""
     print(f"== {path}")
     rows, bench = load(path)
     for name, rs in split(rows, bench).items():
         c = [r for r in rs if r.get("asm") == 0]
         a = [r for r in rs if r.get("asm") == 1]
         if not c or not a:
-            print(f"{name}: no asm column with both values (not a PD_ASM_AB build?)")
+            print(f"{name}: no asm column with both values (not a PD_ASM_AB / PD_STACK_AB build?)")
             continue
         keys = [k for k in rs[0] if k not in ("ms", "period", "asm", "asm_bad") and not k.startswith(("n_", "b_", "t_"))
                 and max(mean(c, k), mean(a, k)) >= 0.05 and k in TOP + [x for _, kids in FINE for x in kids] + ["frame"]]
         # paired: each assembly frame against the C frame right before or after it (neighbouring
         # frames show nearly the same scene, so this cancels most of the scene-to-scene variation)
         pairs = [(rs[i], rs[i + 1]) for i in range(len(rs) - 1) if rs[i].get("asm") != rs[i + 1].get("asm")]
-        print(f"\n### {name}: {len(c)} C frames vs {len(a)} assembly frames, {len(pairs)} neighbour pairs (ms/frame)")
-        print(f"   {'':8s} {'C':>6s}    {'asm':>6s}  {'diff':>6s}          paired diff (+- stderr)")
+        print(f"\n### {name}: {len(c)} frames off vs {len(a)} on, {len(pairs)} neighbour pairs (ms/frame)")
+        print(f"   {'':8s} {'off':>6s}    {'on':>6s}  {'diff':>6s}          paired diff (+- stderr)")
         for k in keys:
             mc, ma = mean(c, k), mean(a, k)
             d = [((q if q["asm"] == 1 else p)[k] - (p if q["asm"] == 1 else q)[k]) / 1000.0 for p, q in pairs]

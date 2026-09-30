@@ -21,6 +21,12 @@ extern int		pd_asm_on;		// 1: use the assembly this frame
 extern unsigned	pd_asm_bad;		// PD_ASM_CHECK: pixels that differed this frame
 #define PD_ASM_ACTIVE()	(pd_asm_on)
 void pd_asm_mismatch (const char *what, int u, int v, int got, int want);
+#endif
+#ifdef PD_ASM_CHECK
+struct espan_s;
+void D_DrawSpans8_C (struct espan_s *pspan);
+void D_AsmCheckSpans (const char *what, struct espan_s *pspan, void (*ref)(struct espan_s *),
+	unsigned char *base, int rowbytes, int pixbytes);
 #else
 #define PD_ASM_ACTIVE()	1
 #endif

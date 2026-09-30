@@ -29,6 +29,9 @@
 #include <quakedef.h>
 #include <quakembd.h>
 #include <d_local.h>
+#ifdef PD_STACK
+#include <pd_stack.h>
+#endif
 
 #define W 400
 #define H 240
@@ -182,7 +185,13 @@ static void run(int n)
 {
 	while (n-- > 0) {
 		fake_us += 33000;
+#ifdef PD_STACK
+		pd_stack_top = PD_StackPointer();	/* as port/boards/playdate/main.c does */
+#endif
 		qembd_frame();
+#ifdef PD_STACK
+		pd_stack_top = 0;
+#endif
 		frame_no++;
 	}
 }

@@ -22,6 +22,8 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 #include "quakedef.h"
 #include "d_local.h"
 #include "pdprof.h"
+#include "pd_asm.h"
+#include "pd_stack.h"
 
 static int	miplevel;
 
@@ -125,46 +127,63 @@ void D_DrawSolidSurface (surf_t *surf, int color)
 D_CalcGradients
 ==============
 */
-void D_CalcGradients (msurface_t *pface)
+void D_CalcGradientsTo (msurface_t *pface, int mip, d_spanparms_t *p)
 {
 	float		mipscale;
 	vec3_t		p_temp1;
 	vec3_t		p_saxis, p_taxis;
 	float		t;
 
-	mipscale = 1.0F / (float)(1 << miplevel);
+	mipscale = 1.0F / (float)(1 << mip);
 
 	TransformVector (pface->texinfo->vecs[0], p_saxis);
 	TransformVector (pface->texinfo->vecs[1], p_taxis);
 
 	t = xscaleinv * mipscale;
-	d_sdivzstepu = p_saxis[0] * t;
-	d_tdivzstepu = p_taxis[0] * t;
+	p->sdivzstepu = p_saxis[0] * t;
+	p->tdivzstepu = p_taxis[0] * t;
 
 	t = yscaleinv * mipscale;
-	d_sdivzstepv = -p_saxis[1] * t;
-	d_tdivzstepv = -p_taxis[1] * t;
+	p->sdivzstepv = -p_saxis[1] * t;
+	p->tdivzstepv = -p_taxis[1] * t;
 
-	d_sdivzorigin = p_saxis[2] * mipscale - xcenter * d_sdivzstepu -
-			ycenter * d_sdivzstepv;
-	d_tdivzorigin = p_taxis[2] * mipscale - xcenter * d_tdivzstepu -
-			ycenter * d_tdivzstepv;
+	p->sdivzorigin = p_saxis[2] * mipscale - xcenter * p->sdivzstepu -
+			ycenter * p->sdivzstepv;
+	p->tdivzorigin = p_taxis[2] * mipscale - xcenter * p->tdivzstepu -
+			ycenter * p->tdivzstepv;
 
 	VectorScale (transformed_modelorg, mipscale, p_temp1);
 
 	t = 0x10000*mipscale;
-	sadjust = ((fixed16_t)(DotProduct (p_temp1, p_saxis) * 0x10000 + 0.5f)) -
-			((pface->texturemins[0] << 16) >> miplevel)
+	p->sadjust = ((fixed16_t)(DotProduct (p_temp1, p_saxis) * 0x10000 + 0.5f)) -
+			((pface->texturemins[0] << 16) >> mip)
 			+ pface->texinfo->vecs[0][3]*t;
-	tadjust = ((fixed16_t)(DotProduct (p_temp1, p_taxis) * 0x10000 + 0.5f)) -
-			((pface->texturemins[1] << 16) >> miplevel)
+	p->tadjust = ((fixed16_t)(DotProduct (p_temp1, p_taxis) * 0x10000 + 0.5f)) -
+			((pface->texturemins[1] << 16) >> mip)
 			+ pface->texinfo->vecs[1][3]*t;
 
 //
 // -1 (-epsilon) so we never wander off the edge of the texture
 //
-	bbextents = ((pface->extents[0] << 16) >> miplevel) - 1;
-	bbextentt = ((pface->extents[1] << 16) >> miplevel) - 1;
+	p->bbextents = ((pface->extents[0] << 16) >> mip) - 1;
+	p->bbextentt = ((pface->extents[1] << 16) >> mip) - 1;
+}
+
+void D_CalcGradients (msurface_t *pface)
+{
+	d_spanparms_t	p;
+
+	D_CalcGradientsTo (pface, miplevel, &p);
+	d_sdivzstepu = p.sdivzstepu;
+	d_tdivzstepu = p.tdivzstepu;
+	d_sdivzstepv = p.sdivzstepv;
+	d_tdivzstepv = p.tdivzstepv;
+	d_sdivzorigin = p.sdivzorigin;
+	d_tdivzorigin = p.tdivzorigin;
+	sadjust = p.sadjust;
+	tadjust = p.tadjust;
+	bbextents = p.bbextents;
+	bbextentt = p.bbextentt;
 }
 
 
@@ -320,27 +339,71 @@ void D_DrawSurfaces (void)
 				}
 
 				pface = s->data;
-				miplevel = D_MipLevelForScale (s->nearzi * scale_for_mip
-				* pface->texinfo->mipadjust);
+#ifdef PD_USE_ASM
+				if (PD_ASM_ACTIVE() && PD_STACK_ACTIVE() && d_drawspans == D_DrawSpans8)
+				{
+				// what the span drawers need goes straight into a block on the stack
+				// instead of a dozen globals that D_DrawSpans8 would read back
+					d_spanparms_t	p;
+					int				mip = D_MipLevelForScale (s->nearzi * scale_for_mip
+									* pface->texinfo->mipadjust);
 
-			// FIXME: make this passed in to D_CacheSurface
-				PROF_BEGINF(P_CACHE);
-				pcurrentcache = D_CacheSurface (pface, miplevel);
-				PROF_ENDF(P_CACHE);
+					PROF_BEGINF(P_CACHE);
+					pcurrentcache = D_CacheSurface (pface, mip);
+					PROF_ENDF(P_CACHE);
 
-				cacheblock = (pixel_t *)pcurrentcache->data;
-				cachewidth = pcurrentcache->width;
+					PROF_BEGINF(P_GRAD);
+					D_CalcGradientsTo (pface, mip, &p);
+					PROF_ENDF(P_GRAD);
+					p.ziorigin = s->d_ziorigin;
+					p.zistepv = s->d_zistepv;
+					p.zistepu = s->d_zistepu;
+					p.cacheblock = (pixel_t *)pcurrentcache->data;
+					p.cachewidth = pcurrentcache->width;
+					p.viewbuffer = (pixel_t *)d_viewbuffer;
+					p.screenwidth = screenwidth;
 
-				PROF_BEGINF(P_GRAD);
-				D_CalcGradients (pface);
-				PROF_ENDF(P_GRAD);
+					PROF_BEGINF(P_SPANS);
+					D_DrawSpans8_ARM (s->spans, &p);
+					PROF_ENDF(P_SPANS);
+					PROF_SPANSF (s->spans);
 
-				PROF_BEGINF(P_SPANS);
-				(*d_drawspans) (s->spans);
-				PROF_ENDF(P_SPANS);
-				PROF_SPANSF (s->spans);
+					D_DrawZSpansP (s->spans, p.ziorigin, p.zistepu, p.zistepv);
+#ifdef PD_ASM_CHECK
+				// compare with the C drawers fed the way the other branch feeds them
+					miplevel = mip;
+					cacheblock = p.cacheblock;
+					cachewidth = p.cachewidth;
+					D_CalcGradients (pface);
+					D_AsmCheckSpans ("spans-p", s->spans, D_DrawSpans8_C, (byte *)d_viewbuffer, screenwidth, 1);
+					D_AsmCheckSpans ("zspans-p", s->spans, D_DrawZSpans, (byte *)d_pzbuffer, d_zwidth * 2, 2);
+#endif
+				}
+				else
+#endif
+				{
+					miplevel = D_MipLevelForScale (s->nearzi * scale_for_mip
+					* pface->texinfo->mipadjust);
 
-				D_DrawZSpans (s->spans);
+				// FIXME: make this passed in to D_CacheSurface
+					PROF_BEGINF(P_CACHE);
+					pcurrentcache = D_CacheSurface (pface, miplevel);
+					PROF_ENDF(P_CACHE);
+
+					cacheblock = (pixel_t *)pcurrentcache->data;
+					cachewidth = pcurrentcache->width;
+
+					PROF_BEGINF(P_GRAD);
+					D_CalcGradients (pface);
+					PROF_ENDF(P_GRAD);
+
+					PROF_BEGINF(P_SPANS);
+					(*d_drawspans) (s->spans);
+					PROF_ENDF(P_SPANS);
+					PROF_SPANSF (s->spans);
+
+					D_DrawZSpans (s->spans);
+				}
 
 				if (s->insubmodel)
 				{

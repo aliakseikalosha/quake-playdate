@@ -22,6 +22,7 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 #include "quakedef.h"
 #include "r_local.h"
 #include "pdprof.h"
+#include "pd_stack.h"
 
 drawsurf_t	r_drawsurf;
 
@@ -52,7 +53,12 @@ static void	(*surfmiptable[4])(void) = {
 
 
 
+#ifdef PD_STACK
+static unsigned	blocklights_static[18*18];
+static unsigned	*blocklights = blocklights_static;	// on the stack while R_DrawSurface has room for it
+#else
 unsigned		blocklights[18*18];
+#endif
 
 /*
 ===============
@@ -426,6 +432,30 @@ static void R_DrawSurfaceRows (unsigned char *basetptr, int soffset, int smax)
 R_DrawSurface
 ===============
 */
+#ifdef PD_STACK
+static void R_DrawSurfaceLit (void);
+
+/*
+Every surface cache build writes its lightmap (up to 18x18 words) three or four times and reads it
+back while building the texels: on the stack when the call chain has room (see pd_stack.h), in
+static memory otherwise.
+*/
+void R_DrawSurface (void)
+{
+	msurface_t	*surf = r_drawsurf.surf;
+	int			n = ((surf->extents[0]>>4)+1) * ((surf->extents[1]>>4)+1);
+	int			onstack = PD_StackRoom (n * sizeof(unsigned) + 1024);	// + R_DrawSurfaceRows and the lighting
+	unsigned	lights[onstack ? n : 1];
+
+	if (onstack)
+		blocklights = lights;
+	R_DrawSurfaceLit ();
+	blocklights = blocklights_static;
+}
+
+#define R_DrawSurface	R_DrawSurfaceLit
+#endif
+
 void R_DrawSurface (void)
 {
 	unsigned char	*basetptr;

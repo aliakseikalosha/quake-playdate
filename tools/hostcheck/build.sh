@@ -6,6 +6,7 @@
 #   TREE=/path/to/other/checkout OUT=ref tools/hostcheck/build.sh
 #   NO_LAZY_CHECK=1 ...                      for trees that predate the lazy low-res upscale
 #   NO_FAST_ALIAS=1 / NO_FAST_FACES=1 / NO_FAST_SURFACES=1   build the original alias rasterizer / world face code / surface builder
+#   NO_STACK=1                               keep the scratch buffers in static memory (see winquake/pd_stack.h)
 set -e
 HERE=$(cd "$(dirname "$0")" && pwd)
 TREE=${TREE:-$(cd "$HERE/../.." && pwd)}
@@ -22,6 +23,8 @@ grep -q "PD_FAST_EDGES" "$TREE/winquake/r_edge.c" 2>/dev/null && DEFS+=(-DPD_FAS
 [ -z "$NO_FAST_ALIAS" ] && grep -q "PD_FAST_ALIAS" "$TREE/winquake/d_polyse.c" 2>/dev/null && DEFS+=(-DPD_FAST_ALIAS=1)
 [ -z "$NO_FAST_FACES" ] && grep -q "PD_FAST_FACES" "$TREE/winquake/r_draw.c" 2>/dev/null && DEFS+=(-DPD_FAST_FACES=1)
 [ -z "$NO_FAST_SURFACES" ] && grep -q "PD_FAST_SURFACES" "$TREE/winquake/r_surf.c" 2>/dev/null && DEFS+=(-DPD_FAST_SURFACES=1)
+# stack buffers (pd_stack.h) with a budget big enough for the host's larger frames, so they are used
+[ -z "$NO_STACK" ] && [ -f "$TREE/winquake/pd_stack.h" ] && DEFS+=(-DPD_STACK=1 "-DPD_STACK_BUDGET=(64*1024)")
 [ -n "$NO_LAZY_CHECK" ] && DEFS+=(-DNO_LAZY_CHECK=1)
 [ -n "$EXTRA_DEFS" ] && DEFS+=($EXTRA_DEFS)
 INC=(-I"$TREE/include" -I"$TREE/winquake" -I"$TREE/port/boards/playdate" -I"$SDK/C_API" -I"$HERE")

@@ -69,10 +69,11 @@ typedef struct polydesc_s {
 } polydesc_t;
 
 // !!! if this is changed, it must be changed in d_ifacea.h too !!!
+// (the original padded it to 32 bytes for the x86 assembly, which is gone; at 28 bytes more models'
+// vertices fit on the stack, see R_AliasDrawModel)
 typedef struct finalvert_s {
 	int		v[6];		// u, v, s, t, l, 1/z
 	int		flags;
-	float	reserved;
 } finalvert_t;
 
 // !!! if this is changed, it must be changed in d_ifacea.h too !!!

@@ -1024,7 +1024,15 @@ static void R_AsmLineCompare (fe_line_t *g, espan_t *csp)
 #endif	// PD_ASM_CHECK
 #endif	// PD_USE_ASM
 
-void R_ScanEdges (void)
+/*
+The scan proper. Its arrays take ~3 KB of the small stack, so it is kept out of line and returns
+before the surfaces are drawn: building a surface cache then has that room (see R_DrawSurface).
+Returns the end of the span list.
+*/
+#ifdef __GNUC__
+__attribute__((noinline))
+#endif
+static espan_t *R_ScanEdgeLines (espan_t **heads, int heads_on)
 {
 	aedge_t		act_stack[FE_ACTIVE_STACK];
 	sentry_t	stk_stack[FE_SURF_STACK];
@@ -1035,8 +1043,6 @@ void R_ScanEdges (void)
 	int			iv, bottom, i, j, k, p, iu;
 	int			head_u, tail_u;
 	signed char	state[surface_p - surfaces];	// spanstate per surface, 0 = not in span, -1 = in inverted span
-	int			heads_on = (surface_p - surfaces) <= FE_MAXHEADS;
-	espan_t		*heads[heads_on ? surface_p - surfaces : 1];	// span list head per surface
 	espan_t		*basespan_p, *sp;
 	edge_t		*ne, *next_edge;
 	surf_t		*s, *surf, *surf2;
@@ -1047,24 +1053,12 @@ void R_ScanEdges (void)
 #endif
 	int			newedges_done;
 
-	PROF_STK(K_SCAN);
-	if (r_draworder.value)
-	{
-		R_ScanEdgesList ();
-		return;
-	}
-
 	basespan_p = (espan_t *)
 			((uintptr_t)(basespans + CACHE_SIZE - 1) & ~(CACHE_SIZE - 1));
 	max_span_p = &basespan_p[MAXSPANS - r_refdef.vrect.width];
 	sp = basespan_p;
 
 	memset (state, 0, sizeof(state));
-	if (heads_on)
-	{
-		memset (heads, 0, sizeof(heads));
-		r_spanheads = heads;
-	}
 
 // the active edge table: left screen edge, the active edges sorted on u, right screen edge
 	head_u = r_refdef.vrect.x << 20;
@@ -1379,7 +1373,7 @@ gotposition:
 
 		// clear the surface span pointers
 			if (heads_on)
-				memset (heads, 0, sizeof(heads));
+				memset (heads, 0, (surface_p - surfaces) * sizeof(*heads));
 			else
 				for (s = &surfaces[1] ; s<surface_p ; s++)
 					s->spans = NULL;
@@ -1449,8 +1443,31 @@ gotposition:
 		PROF_ENDF(P_SESTEP);
 	}
 
+	return sp;
+}
+
+void R_ScanEdges (void)
+{
+	int			heads_on = (surface_p - surfaces) <= FE_MAXHEADS;
+	espan_t		*heads[heads_on ? surface_p - surfaces : 1];	// span list head per surface
+	surf_t		*s;
+
+	PROF_STK(K_SCAN);
+	if (r_draworder.value)
+	{
+		R_ScanEdgesList ();
+		return;
+	}
+
+	if (heads_on)
+	{
+		memset (heads, 0, sizeof(heads));
+		r_spanheads = heads;
+	}
+
+	span_p = R_ScanEdgeLines (heads, heads_on);
+
 // draw whatever's left in the span list
-	span_p = sp;
 	if (r_drawculledpolys)
 	{
 		if (heads_on)

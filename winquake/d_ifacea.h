@@ -64,9 +64,7 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 								// !!! address of this field is pushed in !!!
 								// !!! d_polysa.s must be changed !!!
 #define fv_flags			24
-#define fv_reserved			28
-#define fv_size				32
-#define fv_shift			5
+#define fv_size				28
 
 
 // stvert_t structure

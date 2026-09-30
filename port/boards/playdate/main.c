@@ -24,6 +24,7 @@
 #include "keyqueue.h"
 #include "weapons.h"
 #include "pdprof.h"
+#include "pd_stack.h"
 
 PlaydateAPI *qembd_pd;
 
@@ -301,10 +302,21 @@ static int update(void *ud)
 
 	case ST_RUN:
 		if (setjmp(frame_jmp))
+		{
+#ifdef PD_STACK
+			pd_stack_top = 0;
+#endif
 			return 1;
+		}
 		in_frame = 1;
+#ifdef PD_STACK
+		pd_stack_top = PD_StackPointer();
+#endif
 		poll_input();
 		qembd_frame();
+#ifdef PD_STACK
+		pd_stack_top = 0;
+#endif
 		in_frame = 0;
 		return 1;
 

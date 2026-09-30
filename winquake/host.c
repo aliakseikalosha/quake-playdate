@@ -20,6 +20,7 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 // host.c -- coordinates spawning and killing of local servers
 
 #include "quakedef.h"
+#include "pd_stack.h"
 #include "pdprof.h"
 #include "r_local.h"
 
@@ -40,7 +41,10 @@ qboolean	host_initialized;		// true if into command execution
 
 float		host_frametime;
 double		host_time;
-double		realtime;				// without any filtering or bounding
+double		realtime;
+#ifdef PD_STACK
+uintptr_t	pd_stack_top;					// see pd_stack.h; set by the port
+#endif				// without any filtering or bounding
 double		oldrealtime;			// last frame run
 int			host_framecount;
 

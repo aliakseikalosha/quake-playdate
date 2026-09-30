@@ -570,27 +570,13 @@ void D_DrawSpans8 (espan_t *pspan)
 #ifdef PD_USE_ASM
 #undef D_DrawSpans8
 
-// what D_DrawSpans8_ARM (d_scan_arm.S) reads; the offsets are fixed in the assembly
-typedef struct
-{
-	float		sdivzorigin, sdivzstepv, sdivzstepu;
-	float		tdivzorigin, tdivzstepv, tdivzstepu;
-	float		ziorigin, zistepv, zistepu;
-	fixed16_t	sadjust, tadjust, bbextents, bbextentt;
-	pixel_t		*cacheblock;
-	int			cachewidth;
-	pixel_t		*viewbuffer;
-	int			screenwidth;
-} d_spanparms_t;
-
-void D_DrawSpans8_ARM (espan_t *pspan, const d_spanparms_t *p);
 
 #ifdef PD_ASM_CHECK
 /*
 Runs the C version over the spans the assembly just drew and counts the pixels that differ (the
 picture keeps the C pixels). pixbytes 1: view buffer, 2: z buffer.
 */
-static void D_AsmCheckSpans (const char *what, espan_t *pspan, void (*ref)(espan_t *),
+void D_AsmCheckSpans (const char *what, espan_t *pspan, void (*ref)(espan_t *),
 	byte *base, int rowbytes, int pixbytes)
 {
 	static byte	*saved;
@@ -676,6 +662,12 @@ D_DrawZSpans
 */
 void D_DrawZSpans (espan_t *pspan)
 {
+	D_DrawZSpansP (pspan, d_ziorigin, d_zistepu, d_zistepv);
+}
+
+// D_DrawZSpans with the 1/z gradient passed in
+void D_DrawZSpansP (espan_t *pspan, float _d_ziorigin, float _d_zistepu, float _d_zistepv)
+{
 	int				count, doublecount, izistep;
 	int				izi;
 	short			*pdest;
@@ -686,13 +678,10 @@ void D_DrawZSpans (espan_t *pspan)
 	PROF_BEGINF(P_ZSPAN);
 // FIXME: check for clamping/range problems
 // we count on FP exceptions being turned off to avoid range problems
-	izistep = (int)(d_zistepu * 0x8000 * 0x10000);
+	izistep = (int)(_d_zistepu * 0x8000 * 0x10000);
 
 	short *_d_pzbuffer = d_pzbuffer;
 	unsigned int _d_zwidth= d_zwidth;
-	float _d_ziorigin = d_ziorigin;
-	float _d_zistepu = d_zistepu;
-	float _d_zistepv = d_zistepv;
 
 	do
 	{

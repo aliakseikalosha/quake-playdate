@@ -53,8 +53,8 @@ static const char *const cnt_names[C_NCNT] = {"n_spans", "n_pixels", "n_cbuild",
 
 static SDFile *pf;
 
-#if defined(PD_ASM_AB) || defined(PD_ASM_CHECK)
-/* see winquake/pd_asm.h */
+#if defined(PD_ASM_AB) || defined(PD_ASM_CHECK) || defined(PD_STACK_AB)
+/* see winquake/pd_asm.h and winquake/pd_stack.h */
 int pd_asm_on = 1;
 unsigned pd_asm_bad;
 static unsigned asm_bad_logged;
@@ -978,9 +978,9 @@ void pdprof_frame_begin(void)
 		__asm__ volatile("mov %0, sp" : "=r"(sp));
 		base_sp = sp;
 	}
-#if defined(PD_ASM_AB)
+#if defined(PD_ASM_AB) || defined(PD_STACK_AB)
 	{
-		/* assembly or C by a hash of the frame number: plain odd/even picks up a rhythm in the
+		/* assembly or C (stack or static buffers) by a hash of the frame number: plain odd/even picks up a rhythm in the
 		 * demos (the client section alone differed by over 1 ms between odd and even frames) */
 		uint32_t x = (uint32_t)host_framecount;
 
@@ -992,7 +992,7 @@ void pdprof_frame_begin(void)
 		pd_asm_on = (int)(x & 1);
 	}
 #endif
-#if defined(PD_ASM_AB) || defined(PD_ASM_CHECK)
+#if defined(PD_ASM_AB) || defined(PD_ASM_CHECK) || defined(PD_STACK_AB)
 	pd_asm_bad = 0;
 #endif
 	entry_ms = qembd_pd->system->getCurrentTimeMilliseconds();

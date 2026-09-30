@@ -70,9 +70,26 @@ extern fixed16_t	sadjust, tadjust;
 extern fixed16_t	bbextents, bbextentt;
 
 
+// everything the textured span drawer needs for one surface; D_CalcGradientsTo fills in the s/z
+// and t/z gradients and the texture adjustments (D_DrawSpans8_ARM reads it, offsets fixed there)
+typedef struct
+{
+	float		sdivzorigin, sdivzstepv, sdivzstepu;
+	float		tdivzorigin, tdivzstepv, tdivzstepu;
+	float		ziorigin, zistepv, zistepu;
+	fixed16_t	sadjust, tadjust, bbextents, bbextentt;
+	pixel_t		*cacheblock;
+	int			cachewidth;
+	pixel_t		*viewbuffer;
+	int			screenwidth;
+} d_spanparms_t;
+
+void D_CalcGradientsTo (msurface_t *pface, int mip, d_spanparms_t *p);
 void D_DrawSpans8 (espan_t *pspans);
+void D_DrawSpans8_ARM (espan_t *pspan, const d_spanparms_t *p);
 void D_DrawSpans16 (espan_t *pspans);
 void D_DrawZSpans (espan_t *pspans);
+void D_DrawZSpansP (espan_t *pspans, float ziorigin, float zistepu, float zistepv);
 void Turbulent8 (espan_t *pspan);
 void D_SpriteDrawSpans (sspan_t *pspan);
 

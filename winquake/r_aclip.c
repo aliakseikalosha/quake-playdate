@@ -22,9 +22,19 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 #include "quakedef.h"
 #include "r_local.h"
 #include "d_local.h"
+#include "pd_stack.h"
 
+#ifdef PD_STACK
+// the clipped polygon is copied, clipped and read back by the rasterizer: on the stack when there
+// is room, in static memory otherwise (see pd_stack.h); R_AliasClipTriangle sets both on entry
+static finalvert_t		fv_static[2][8];
+static auxvert_t		av_static[8];
+static finalvert_t		(*fv)[8] = fv_static;
+static auxvert_t		*av = av_static;
+#else
 static finalvert_t		fv[2][8];
 static auxvert_t		av[8];
+#endif
 
 void R_AliasProjectFinalVert (finalvert_t *fv, auxvert_t *av);
 #ifdef PD_FAST_ALIAS
@@ -235,6 +245,14 @@ void R_AliasClipTriangle (mtriangle_t *ptri)
 	int				i, k, pingpong;
 	mtriangle_t		mtri;
 	unsigned		clipflags;
+#ifdef PD_STACK
+	int				onstack = PD_StackRoom (sizeof(fv_static) + sizeof(av_static) + 768);	// + clip and draw
+	finalvert_t		fvs[onstack ? 2 : 1][8];
+	auxvert_t		avs[onstack ? 8 : 1];
+
+	fv = onstack ? fvs : fv_static;
+	av = onstack ? avs : av_static;
+#endif
 
 // copy vertexes and fix seam texture coordinates
 	if (ptri->facesfront)

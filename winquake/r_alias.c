@@ -22,6 +22,7 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 #include "quakedef.h"
 #include "r_local.h"
 #include "pdprof.h"
+#include "pd_stack.h"
 #include "d_local.h"	// FIXME: shouldn't be needed (is needed for patch
 						// right now, but that should move)
 
@@ -843,6 +844,17 @@ void R_AliasDrawModel (alight_t *plighting)
 
 	paliashdr = (aliashdr_t *)Mod_Extradata (currententity->model);
 	pmdl = (mdl_t *)((byte *)paliashdr + paliashdr->model);
+
+#ifdef PD_STACK
+// the projected vertices are written and then read back by every triangle: on the stack when
+// the model is small enough for the room there (see pd_stack.h: up to ~180 vertices, which takes
+// in the weapons, ogres, zombies and soldiers but not players or dogs)
+	int			onstack = PD_StackRoom (pmdl->numverts * sizeof(finalvert_t) + 1280);	// + clipping and drawing (~1.15 KB)
+	finalvert_t	stackverts[onstack ? pmdl->numverts : 1];
+
+	if (onstack)
+		pfinalverts = stackverts;
+#endif
 
 	R_AliasSetupSkin ();
 	R_AliasSetUpTransform (currententity->trivial_accept);

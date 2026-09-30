@@ -67,6 +67,12 @@ else()
 	set(PD_ASM_BUILD OFF)
 endif()
 
+# Scratch buffers (surface lightmaps, alias vertices) on the fast stack when the call chain leaves
+# room, instead of in slow static memory (winquake/pd_stack.h). With PD_PROFILE, PD_STACK_AB picks
+# the stack or the static buffers frame by frame (compare with scripts/pd-report.py --ab).
+option(PD_STACK "Put scratch buffers on the stack when there is room" ON)
+option(PD_STACK_AB "With PD_PROFILE and PD_STACK: stack buffers on half of the frames, static ones on the others" OFF)
+
 option(PD_PROFILE "Build the on-device profiler" OFF)
 option(PD_PROFILE_FINE "With PD_PROFILE: also time world faces, edge scan parts, surface builds, server and QuakeC builtins (adds ~2 ms/frame of timer overhead)" OFF)
 option(PD_BENCH "With PD_PROFILE: run the demos as timedemos" OFF)
@@ -80,6 +86,8 @@ add_compile_definitions(
 	$<$<BOOL:${PD_FAST_ALIAS}>:PD_FAST_ALIAS=1>
 	$<$<BOOL:${PD_FAST_FACES}>:PD_FAST_FACES=1>
 	$<$<BOOL:${PD_FAST_SURFACES}>:PD_FAST_SURFACES=1>
+	$<$<BOOL:${PD_STACK}>:PD_STACK=1>
+	$<$<AND:$<BOOL:${PD_STACK}>,$<BOOL:${PD_PROFILE}>,$<BOOL:${PD_STACK_AB}>>:PD_STACK_AB=1>
 	$<$<BOOL:${PD_ASM_BUILD}>:PD_ASM=1>
 	$<$<AND:$<BOOL:${PD_ASM_BUILD}>,$<BOOL:${PD_PROFILE}>,$<BOOL:${PD_ASM_AB}>>:PD_ASM_AB=1>
 	$<$<AND:$<BOOL:${PD_ASM_BUILD}>,$<BOOL:${PD_PROFILE}>,$<BOOL:${PD_ASM_CHECK}>>:PD_ASM_CHECK=1>
