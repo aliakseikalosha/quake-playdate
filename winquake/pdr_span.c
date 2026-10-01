@@ -38,8 +38,6 @@ static inline int SampleLight (const pdr_spanctx_t *c, int s, int t)
 
 	if (!c->light)
 		return c->lconst;
-	if (PDR_EXPERIMENT(7))		/* experiment 7: no light block sampling */
-		return 32 << 18;
 	ls = s >> c->lshift;
 	lt = t >> c->lshift;
 	if (ls > c->lmaxs)
@@ -153,14 +151,12 @@ static void SpanLit (const pdr_spanctx_t *c, byte *dst, int y, int x0, int count
 			if (n > 1)
 			{
 				float	last = (float)(n - 1);
-				float	ls = sdivz + c->sdivzstepu * last;
-				float	lt = tdivz + c->tdivzstepu * last;
 				float	lz = (float)0x10000 / (zi + c->zistepu * last);
 
-				snext = ClampS ((int)(ls * lz) + c->sadjust, c->bbextents);
+				snext = ClampS ((int)((sdivz + c->sdivzstepu * last) * lz) + c->sadjust, c->bbextents);
 				if (snext < PDR_SUBDIV)
 					snext = PDR_SUBDIV;
-				tnext = ClampS ((int)(lt * lz) + c->tadjust, c->bbextentt);
+				tnext = ClampS ((int)((tdivz + c->tdivzstepu * last) * lz) + c->tadjust, c->bbextentt);
 				if (tnext < PDR_SUBDIV)
 					tnext = PDR_SUBDIV;
 				sstep = (snext - s) / (n - 1);
@@ -170,20 +166,12 @@ static void SpanLit (const pdr_spanctx_t *c, byte *dst, int y, int x0, int count
 			}
 		}
 
-		if (PDR_EXPERIMENT(1))		/* experiment 1: texture without the colormap */
+		if (PDR_EXPERIMENT(11))	/* experiment 11: texels from a tiny always-cached table */
 		{
-			int	i, ss = s + c->soff, tt = t + c->toff;
+			static byte	hot[64];
 
-			for (i=0 ; i<n ; i++, ss += sstep, tt += tstep)
-				dst[i] = c->tex[c->tshift >= 0 ? ((tt >> c->tshift) & c->tmask) + ((ss >> 16) & c->smask) : 0];
-		}
-		else if (PDR_EXPERIMENT(4) || PDR_EXPERIMENT(5))	/* 4: 16 light levels; 5: one colormap row */
-		{
-			int	i, ss = s + c->soff, tt = t + c->toff, ll = l, mask = PDR_EXPERIMENT(4) ? 0x3c00 : 0;
-			const byte	*cm = c->colormap + (PDR_EXPERIMENT(5) ? 32 * 256 : 0);
-
-			for (i=0 ; i<n ; i++, ss += sstep, tt += tstep, ll += lstep)
-				dst[i] = cm[((ll >> 10) & mask) + c->tex[c->tshift >= 0 ? ((tt >> c->tshift) & c->tmask) + ((ss >> 16) & c->smask) : 0]];
+			SpanLitPow2 (dst, hot, c->colormap, s + c->soff, t + c->toff, l, sstep, tstep, lstep, n,
+						 c->tshift >= 0 ? c->tshift : 16, 7, 7 << 3);
 		}
 		else if (c->tshift >= 0)
 			SpanLitPow2 (dst, c->tex, c->colormap, s + c->soff, t + c->toff, l, sstep, tstep, lstep, n,

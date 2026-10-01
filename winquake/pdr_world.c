@@ -222,6 +222,7 @@ static byte		*pdr_nodevis;		/* nodes above a PVS leaf */
 static short	*pdr_leaffrag;		/* first bmodel fragment in each world leaf, -1 = none */
 static mleaf_t	*pdr_visleaf;		/* leaf the PVS bits are for */
 static byte		*pdr_leafsolid;
+static byte		*pdr_leafhasfrag;	/* leaves with brush entity fragments this frame */
 
 /*
 ================
@@ -255,6 +256,7 @@ void PDR_BuildBrushes (void)
 	pdr_leafvis = Hunk_AllocName ((pdr_world->numleafs + 7) >> 3, "pdr");
 	pdr_nodevis = Hunk_AllocName ((pdr_world->numnodes + 7) >> 3, "pdr");
 	pdr_leafsolid = Hunk_AllocName (pdr_world->numleafs, "pdr");
+	pdr_leafhasfrag = Hunk_AllocName ((pdr_world->numleafs + 7) >> 3, "pdr");
 	pdr_leaffrag = Hunk_AllocName (pdr_world->numleafs * sizeof(short), "pdr");
 	for (i=0 ; i<pdr_world->numleafs ; i++)
 	{
@@ -351,105 +353,6 @@ static inline uint32_t RangeMask (int b0, int b1)	/* bits [b0, b1) of one word, 
 	return hi & ~((1u << b0) - 1);
 }
 
-/* is every pixel of [x0, x1) x [y0, y1) (clamped to the view) covered? */
-static qboolean PDR_RectCovered (int x0, int x1, int y0, int y1)
-{
-	int		y, w, w0, w1;
-
-	if (x0 < pdr_vx)
-		x0 = pdr_vx;
-	if (x1 > pdr_vx + pdr_vw)
-		x1 = pdr_vx + pdr_vw;
-	if (y0 < pdr_vy)
-		y0 = pdr_vy;
-	if (y1 > pdr_vy + pdr_vh)
-		y1 = pdr_vy + pdr_vh;
-	if (x0 >= x1 || y0 >= y1)
-		return true;
-	x0 -= pdr_vx;
-	x1 -= pdr_vx;
-	w0 = x0 >> 5;
-	w1 = (x1 - 1) >> 5;
-	if (pdr_skip != 2 && PDR_ROW_SKIPPED(y0))
-		y0++;
-	for (y=y0 ; y<y1 ; y+=pdr_ystep)
-	{
-		uint32_t	*c = CovRow (y);
-
-		if (w0 == w1)
-		{
-			uint32_t	m = RangeMask (x0 & 31, ((x1 - 1) & 31) + 1);
-
-			if ((c[w0] & m) != m)
-				return false;
-			continue;
-		}
-		if ((c[w0] | ((1u << (x0 & 31)) - 1)) != 0xffffffffu)
-			return false;
-		for (w=w0+1 ; w<w1 ; w++)
-			if (c[w] != 0xffffffffu)
-				return false;
-		if ((c[w1] & RangeMask (0, ((x1 - 1) & 31) + 1)) != RangeMask (0, ((x1 - 1) & 31) + 1))
-			return false;
-	}
-	return true;
-}
-
-/* is the box (world space) entirely behind pixels that are already covered? */
-static qboolean PDR_BoxCovered (const short *mm)
-{
-	float	base[3], ex[3], ey[3], ez[3], c[3];
-	float	umin = 1e9f, umax = -1e9f, vmin = 1e9f, vmax = -1e9f;
-	int		i;
-
-	if (r_origin[0] >= mm[0] - 1 && r_origin[0] <= mm[3] + 1 &&
-		r_origin[1] >= mm[1] - 1 && r_origin[1] <= mm[4] + 1 &&
-		r_origin[2] >= mm[2] - 1 && r_origin[2] <= mm[5] + 1)
-		return false;
-
-	for (i=0 ; i<3 ; i++)
-		c[i] = mm[i] - r_origin[i];
-	base[0] = DotProduct (c, vright);
-	base[1] = DotProduct (c, vup);
-	base[2] = DotProduct (c, vpn);
-	i = mm[3] - mm[0];
-	ex[0] = vright[0] * i; ex[1] = vup[0] * i; ex[2] = vpn[0] * i;
-	i = mm[4] - mm[1];
-	ey[0] = vright[1] * i; ey[1] = vup[1] * i; ey[2] = vpn[1] * i;
-	i = mm[5] - mm[2];
-	ez[0] = vright[2] * i; ez[1] = vup[2] * i; ez[2] = vpn[2] * i;
-
-	for (i=0 ; i<8 ; i++)
-	{
-		float	x = base[0], y = base[1], z = base[2], zi, u, v;
-
-		if (i & 1)
-			x += ex[0], y += ex[1], z += ex[2];
-		if (i & 2)
-			x += ey[0], y += ey[1], z += ey[2];
-		if (i & 4)
-			x += ez[0], y += ez[1], z += ez[2];
-		if (z < 1.0f)
-			return false;
-		zi = 1.0f / z;
-		u = pdr_xcenter + pdr_xscale * x * zi;
-		v = pdr_ycenter - pdr_yscale * y * zi;
-		if (u < umin) umin = u;
-		if (u > umax) umax = u;
-		if (v < vmin) vmin = v;
-		if (v > vmax) vmax = v;
-	}
-	if (umax < pdr_umin || umin > pdr_umax || vmax < pdr_vmin || vmin > pdr_vmax)
-		return true;	/* off screen */
-	return PDR_RectCovered ((int)(umin - 1), (int)(umax + 2), (int)(vmin - 1), (int)(vmax + 2));
-}
-
-/* worth testing boxes against the coverage? (not while little of the view is covered) */
-static inline qboolean PDR_OcclusionUseful (void)
-{
-	return pdr_covered * 4 > pdr_covtotal;
-}
-
 /*
 ==============================================================================
 
@@ -490,7 +393,6 @@ typedef struct
 	unsigned short		fi;
 	unsigned short		nspans;
 	int					firstspan;
-	const void			*key;		/* its texture: faces are drawn grouped by texture */
 } vface_t;
 
 #define MAX_DFACES	512
@@ -503,23 +405,17 @@ static int		pdr_numdfaces, pdr_numdspans;
 
 /* clip a view-space polygon to one frustum plane; the new vertex of an edge is always computed
    from the edge's inside end, so the two faces sharing an edge get the same point */
+/* the four frustum planes in view space: inside when a*x + b*y + c*z >= 0 (set per frame) */
+static float	pdr_viewplanes[4][3];
+
 static int ClipToPlane (const vvert_t *in, int n, vvert_t *out, int cap, int plane)
 {
-	int		i, o = 0;
-	float	d[n];
+	int			i, o = 0;
+	float		d[n];
+	const float	*pl = pdr_viewplanes[plane];
 
 	for (i=0 ; i<n ; i++)
-	{
-		const vvert_t	*v = &in[i];
-
-		switch (plane)
-		{
-		case 0:	d[i] = pdr_xscale * v->x + pdr_hw * v->z; break;
-		case 1:	d[i] = pdr_hw * v->z - pdr_xscale * v->x; break;
-		case 2:	d[i] = pdr_hh * v->z - pdr_yscale * v->y; break;
-		default: d[i] = pdr_hh * v->z + pdr_yscale * v->y; break;
-		}
-	}
+		d[i] = pl[0] * in[i].x + pl[1] * in[i].y + pl[2] * in[i].z;
 	for (i=0 ; i<n ; i++)
 	{
 		int		j = i + 1 == n ? 0 : i + 1;
@@ -696,29 +592,11 @@ static void PDR_SetupFace (const vface_t *fi, pdr_spanctx_t *c)
 static void PDR_DrawFaces (void)
 {
 	int		d;
-	short	order[MAX_DFACES];
 
 	PROF_BEGINF(P_SPANS);
 	for (d=0 ; d<pdr_numdfaces ; d++)
-		order[d] = d;
-	if (PDR_EXPERIMENT(8))	/* experiment 8: grouped by texture */
 	{
-		for (d=1 ; d<pdr_numdfaces ; d++)
-		{
-			int			j = d, o = order[d];
-			const void	*k = pdr_dfaces[o].key;
-
-			while (j > 0 && (uintptr_t)pdr_dfaces[order[j-1]].key > (uintptr_t)k)
-			{
-				order[j] = order[j-1];
-				j--;
-			}
-			order[j] = o;
-		}
-	}
-	for (d=0 ; d<pdr_numdfaces ; d++)
-	{
-		const vface_t	*df = &pdr_dfaces[order[d]];
+		const vface_t	*df = &pdr_dfaces[d];
 		const unsigned	*sp = &pdr_dspans[df->firstspan];
 		pdr_spanctx_t	ctx;
 		int				i;
@@ -769,7 +647,6 @@ static void PDR_Run (faceinfo_t *fi, int y, int x0, int x1)
 		df->ent = fi->ent;
 		df->nearzi = fi->nearzi;
 		df->fi = fi->fi;
-		df->key = fi->brush->model->texinfo[fi->f->texinfo].texture;
 		df->nspans = 0;
 		df->firstspan = pdr_numdspans;
 	}
@@ -860,7 +737,6 @@ static void PDR_RasterFace (faceinfo_t *fi, const float (*verts)[3], int nverts,
 	int			i, n, p, ytop, ybot, y;
 
 // transform
-	PROF_BEGINF(P_FACE);
 	in = bufa;
 	for (i=0 ; i<nverts ; i++)
 	{
@@ -875,7 +751,31 @@ static void PDR_RasterFace (faceinfo_t *fi, const float (*verts)[3], int nverts,
 	}
 	n = nverts;
 
-// clip
+// clip: only against the planes some vertex is outside of; out of the view if all are outside one
+	if (clipflags)
+	{
+		int	orcode = 0, andcode = 15;
+
+		for (i=0 ; i<n ; i++)
+		{
+			int	code = 0;
+
+			for (p=0 ; p<4 ; p++)
+			{
+				const float	*pl = pdr_viewplanes[p];
+
+				if ((clipflags & (1 << p)) && pl[0] * in[i].x + pl[1] * in[i].y + pl[2] * in[i].z < 0)
+					code |= 1 << p;
+			}
+			orcode |= code;
+			andcode &= code;
+		}
+		if (andcode)
+		{
+			return;
+		}
+		clipflags = orcode;
+	}
 	out = bufb;
 	for (p=0 ; p<4 ; p++)
 	{
@@ -884,7 +784,6 @@ static void PDR_RasterFace (faceinfo_t *fi, const float (*verts)[3], int nverts,
 		n = ClipToPlane (in, n, out, nverts + 4, p);
 		if (n < 3)
 		{
-			PROF_ENDF(P_FACE);
 			return;
 		}
 		tmp = in; in = out; out = tmp;
@@ -917,7 +816,6 @@ static void PDR_RasterFace (faceinfo_t *fi, const float (*verts)[3], int nverts,
 	ybot = (int)ceilf (vmax);		/* rows [ytop, ybot) */
 	if (pdr_skip != 2 && ytop < ybot && PDR_ROW_SKIPPED(ytop))
 		ytop++;
-	PROF_ENDF(P_FACE);
 	if (ytop >= ybot)
 		return;
 	PDR_RasterRows (fi, pu, pv, n, ytop, ybot);
@@ -1014,6 +912,7 @@ typedef struct
 	entity_t		*ent;
 	pdr_brush_t		*brush;
 	pdr_basis_t		basis;			/* view in the model's space */
+	int				topnode;		/* deepest world node (or ~leaf) holding the entity's box */
 	float			rot[3][3];		/* model -> world rotation (rows), identity if not rotated */
 	qboolean		rotated;
 } bent_t;
@@ -1042,7 +941,10 @@ void PDR_ClearBmodels (void)
 	int		i;
 
 	for (i=0 ; i<pdr_numfragleafs ; i++)
+	{
 		pdr_leaffrag[pdr_fragleafs[i]] = -1;
+		pdr_leafhasfrag[pdr_fragleafs[i] >> 3] = 0;
+	}
 	pdr_numfragleafs = 0;
 	pdr_numbents = 0;
 	pdr_fragbytes = 0;
@@ -1068,7 +970,10 @@ static void PDR_StoreFragment (int leaf, int bent, int face, const float (*v)[3]
 	if (*link < 0)
 	{
 		if (pdr_numfragleafs < (int)(sizeof(pdr_fragleafs) / sizeof(pdr_fragleafs[0])))
+		{
 			pdr_fragleafs[pdr_numfragleafs++] = leaf;
+			BIT_SET (pdr_leafhasfrag, leaf);
+		}
 		else
 			return;
 	}
@@ -1092,14 +997,14 @@ typedef struct
 static float		clipwork_v[CLIPWORK_VERTS][3];
 static clipitem_t	clipwork_items[CLIPWORK_ITEMS];
 
-static void PDR_ClipFragment (int bent, int face, const float (*v0)[3], int n0)
+static void PDR_ClipFragment (int bent, int face, const float (*v0)[3], int n0, int startnode)
 {
 	int		nitems = 0, nv = 0;
 
 	if (n0 > PDR_MAXCLIPVERTS)
 		return;
 	memcpy (clipwork_v[0], v0, n0 * 12);
-	clipwork_items[0].node = 0;
+	clipwork_items[0].node = startnode;
 	clipwork_items[0].first = 0;
 	clipwork_items[0].n = n0;
 	nitems = 1;
@@ -1223,7 +1128,7 @@ static void PDR_BmodelFace (bent_t *be, int bi, int fi)
 			w[i][2] = p[2] + e->origin[2];
 		}
 	}
-	PDR_ClipFragment (bi, fi, (const float (*)[3])w, f->numverts);
+	PDR_ClipFragment (bi, fi, (const float (*)[3])w, f->numverts, be->topnode);
 }
 
 /* the model's faces, front to back from the eye (in model space) */
@@ -1254,6 +1159,41 @@ static void PDR_BmodelNode (bent_t *be, int bi, int node, int depth)
 	PDR_BmodelNode (be, bi, pn->children[!side], depth + 1);
 }
 
+/* the deepest world node whose plane splits the box, or ~leaf if one leaf holds it all; every
+   polygon inside the box goes down the same way until there */
+static int PDR_TopNode (const float *mins, const float *maxs)
+{
+	int		node = 0;
+
+	while (node >= 0)
+	{
+		const pdr_node_t	*pn = &pdr_world->nodes[node];
+		float				dmin = -pn->dist, dmax = -pn->dist;
+		int					j;
+
+		for (j=0 ; j<3 ; j++)
+		{
+			if (pn->normal[j] >= 0)
+			{
+				dmin += pn->normal[j] * mins[j];
+				dmax += pn->normal[j] * maxs[j];
+			}
+			else
+			{
+				dmin += pn->normal[j] * maxs[j];
+				dmax += pn->normal[j] * mins[j];
+			}
+		}
+		if (dmin > 0)
+			node = pn->children[0];
+		else if (dmax <= 0)
+			node = pn->children[1];
+		else
+			break;
+	}
+	return node;
+}
+
 /*
 ================
 PDR_AddBmodel
@@ -1272,6 +1212,25 @@ void PDR_AddBmodel (entity_t *e, pdr_brush_t *b, model_t *m)
 	be = &pdr_bents[bi];
 	be->ent = e;
 	be->brush = b;
+	{
+		float	mins[3], maxs[3];
+		int		j;
+
+		for (j=0 ; j<3 ; j++)
+		{
+			if (e->angles[0] || e->angles[1] || e->angles[2])
+			{
+				mins[j] = e->origin[j] - m->radius - 1;
+				maxs[j] = e->origin[j] + m->radius + 1;
+			}
+			else
+			{
+				mins[j] = e->origin[j] + m->mins[j] - 1;
+				maxs[j] = e->origin[j] + m->maxs[j] + 1;
+			}
+		}
+		be->topnode = PDR_TopNode (mins, maxs);
+	}
 	be->rotated = e->angles[0] || e->angles[1] || e->angles[2];
 	if (be->rotated)
 	{
@@ -1418,7 +1377,9 @@ static void PDR_WorldFace (int fi, int clip)
 	info.tb = &pdr_wbasis;
 	info.ent = NULL;
 	info.dface = -1;
+	PROF_BEGINF(P_FACE);
 	PDR_RasterFace (&info, (const float (*)[3])info.f->verts, info.f->numverts, clip & 15);
+	PROF_ENDF(P_FACE);
 }
 
 static void PDR_VisitLeaf (int leaf, int clip)
@@ -1426,7 +1387,7 @@ static void PDR_VisitLeaf (int leaf, int clip)
 	const pdr_leaf_t	*pl;
 	int					i;
 
-	if (pdr_leafsolid[leaf] || !BIT_TEST (pdr_leafvis, leaf))
+	if (!BIT_TEST (pdr_leafvis, leaf))		/* (solid leaves are never in the PVS) */
 		return;
 	pl = &pdr_world->leafs[leaf];
 	if (clip & 15)
@@ -1434,11 +1395,6 @@ static void PDR_VisitLeaf (int leaf, int clip)
 		clip = PDR_CullBox (pl->minmaxs, clip);
 		if (clip < 0)
 			return;
-	}
-	if (PDR_OcclusionUseful () && PDR_BoxCovered (pl->minmaxs))
-	{
-		pdr_c_occl++;
-		return;
 	}
 	pdr_c_leafs++;
 	PROF_BEGINF(P_WMARK);
@@ -1461,7 +1417,7 @@ static void PDR_VisitLeaf (int leaf, int clip)
 	}
 
 	PROF_ENDF(P_WMARK);
-	if (pdr_leaffrag[leaf] >= 0 && !(clip & CLIP_FAR))
+	if (BIT_TEST (pdr_leafhasfrag, leaf) && !(clip & CLIP_FAR))
 		PDR_DrawLeafFragments (leaf);
 }
 
@@ -1517,11 +1473,6 @@ static void PDR_Walk (void)
 			}
 			if (pdr_maxdist2 > 0 && !(clip & CLIP_FAR) && PDR_BoxBeyond (pn->minmaxs))
 				clip |= CLIP_FAR;
-			if (PDR_OcclusionUseful () && PDR_BoxCovered (pn->minmaxs))
-			{
-				pdr_c_occl++;
-				continue;
-			}
 			pdr_c_nodes++;
 			dot = DotProduct (r_origin, pn->normal) - pn->dist;
 			side = dot < 0;
@@ -1559,7 +1510,7 @@ static void PDR_Walk (void)
 				{
 					int	fi = first + i;
 
-					if (BIT_TEST (pdr_facevis, fi))
+					if (BIT_TEST (pdr_facevis, fi) && !PDR_EXPERIMENT(10))	/* experiment 10: walk only */
 						PDR_WorldFace (fi, clip);
 				}
 				PROF_ENDF(P_WSURFS);
@@ -1610,6 +1561,10 @@ static void PDR_DrawWorldWith (uint32_t *cov)
 
 	pdr_cov = cov;
 	pdr_rowshift = pdr_skip != 2;
+	pdr_viewplanes[0][0] = pdr_xscale;  pdr_viewplanes[0][1] = 0;            pdr_viewplanes[0][2] = pdr_hw;
+	pdr_viewplanes[1][0] = -pdr_xscale; pdr_viewplanes[1][1] = 0;            pdr_viewplanes[1][2] = pdr_hw;
+	pdr_viewplanes[2][0] = 0;           pdr_viewplanes[2][1] = -pdr_yscale;  pdr_viewplanes[2][2] = pdr_hh;
+	pdr_viewplanes[3][0] = 0;           pdr_viewplanes[3][1] = pdr_yscale;   pdr_viewplanes[3][2] = pdr_hh;
 	pdr_ystep = pdr_skip != 2 ? 2 : 1;
 	pdr_ystart = pdr_vy;
 	if (pdr_skip != 2 && PDR_ROW_SKIPPED(pdr_ystart))

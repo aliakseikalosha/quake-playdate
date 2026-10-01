@@ -249,27 +249,50 @@ The screen rectangle of the entity's frame box; false if it is off screen (R_Ali
 */
 qboolean PDR_AliasRect (entity_t *e, int rect[4])
 {
+	static const byte	edges[12][2] = {
+		{0, 1}, {2, 3}, {4, 5}, {6, 7}, {0, 2}, {1, 3}, {4, 6}, {5, 7}, {0, 4}, {1, 5}, {2, 6}, {3, 7}
+	};
 	asetup_t	a;
+	float		v[8][3];
 	float		umin = 1e9f, umax = -1e9f, vmin = 1e9f, vmax = -1e9f;
-	int			i, anyz = 0, allz = 1;
+	int			i, n = 0;
 
 	SetupModel (e, &a);
 	for (i=0 ; i<8 ; i++)
 	{
-		float	p[3], x, y, z;
+		float	p[3];
 
 		p[0] = (i & 1) ? a.frame->bboxmax.v[0] : a.frame->bboxmin.v[0];
 		p[1] = (i & 2) ? a.frame->bboxmax.v[1] : a.frame->bboxmin.v[1];
 		p[2] = (i & 4) ? a.frame->bboxmax.v[2] : a.frame->bboxmin.v[2];
-		x = DotProduct (p, a.xf[0]) + a.xf[0][3];
-		y = DotProduct (p, a.xf[1]) + a.xf[1][3];
-		z = DotProduct (p, a.xf[2]) + a.xf[2][3];
-		if (z < ALIAS_Z_CLIP_PLANE)
+		v[i][0] = DotProduct (p, a.xf[0]) + a.xf[0][3];
+		v[i][1] = DotProduct (p, a.xf[1]) + a.xf[1][3];
+		v[i][2] = DotProduct (p, a.xf[2]) + a.xf[2][3];
+	}
+
+// the corners in front of the near plane, and where the box's edges cross it
+	for (i=0 ; i<20 ; i++)
+	{
+		float	x, y, z;
+
+		if (i < 8)
 		{
-			anyz = 1;
-			continue;
+			if (v[i][2] < ALIAS_Z_CLIP_PLANE)
+				continue;
+			x = v[i][0]; y = v[i][1]; z = v[i][2];
 		}
-		allz = 0;
+		else
+		{
+			const float	*p0 = v[edges[i-8][0]], *p1 = v[edges[i-8][1]];
+			float		f;
+
+			if ((p0[2] < ALIAS_Z_CLIP_PLANE) == (p1[2] < ALIAS_Z_CLIP_PLANE))
+				continue;
+			f = (ALIAS_Z_CLIP_PLANE - p0[2]) / (p1[2] - p0[2]);
+			x = p0[0] + (p1[0] - p0[0]) * f;
+			y = p0[1] + (p1[1] - p0[1]) * f;
+			z = ALIAS_Z_CLIP_PLANE;
+		}
 		z = 1.0f / z;
 		x = x * pdr_xscale * z + pdr_xcenter;
 		y = y * pdr_yscale * z + pdr_ycenter;
@@ -277,24 +300,16 @@ qboolean PDR_AliasRect (entity_t *e, int rect[4])
 		if (x > umax) umax = x;
 		if (y < vmin) vmin = y;
 		if (y > vmax) vmax = y;
+		n++;
 	}
-	if (allz)
-		return false;
-	if (anyz)
-	{
-		// partly behind the near plane: assume it can cover anything
-		rect[0] = pdr_vx;
-		rect[1] = pdr_vy;
-		rect[2] = pdr_vx + pdr_vw;
-		rect[3] = pdr_vy + pdr_vh;
-		return true;
-	}
+	if (!n)
+		return false;	/* entirely behind the near plane */
 	if (umax < pdr_vx || umin > pdr_vx + pdr_vw || vmax < pdr_vy || vmin > pdr_vy + pdr_vh)
 		return false;
-	rect[0] = (int)umin - 1;
-	rect[1] = (int)vmin - 1;
-	rect[2] = (int)umax + 2;
-	rect[3] = (int)vmax + 2;
+	rect[0] = umin < -30000 ? -30000 : (int)umin - 1;
+	rect[1] = vmin < -30000 ? -30000 : (int)vmin - 1;
+	rect[2] = umax > 30000 ? 30000 : (int)umax + 2;
+	rect[3] = vmax > 30000 ? 30000 : (int)vmax + 2;
 	return true;
 }
 
