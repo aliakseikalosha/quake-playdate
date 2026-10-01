@@ -166,25 +166,7 @@ static void SpanLit (const pdr_spanctx_t *c, byte *dst, int y, int x0, int count
 			}
 		}
 
-		if (PDR_EXPERIMENT(19))	/* experiment 19: everything but the pixel stores */
-		{
-			static volatile byte	sink;
-			int		i, ss = s + c->soff, tt = t + c->toff, ll = l;
-			byte	acc = 0;
-
-			if (c->tshift >= 0)
-				for (i=0 ; i<n ; i++, ss += sstep, tt += tstep, ll += lstep)
-					acc ^= c->colormap[((ll >> 10) & 0x3f00) + c->tex[((tt >> c->tshift) & c->tmask) + ((ss >> 16) & c->smask)]];
-			sink = acc;
-		}
-		else if (PDR_EXPERIMENT(11))	/* experiment 11: texels from a tiny always-cached table */
-		{
-			static byte	hot[64];
-
-			SpanLitPow2 (dst, hot, c->colormap, s + c->soff, t + c->toff, l, sstep, tstep, lstep, n,
-						 c->tshift >= 0 ? c->tshift : 16, 7, 7 << 3);
-		}
-		else if (c->tshift >= 0)
+		if (c->tshift >= 0)
 			SpanLitPow2 (dst, c->tex, c->colormap, s + c->soff, t + c->toff, l, sstep, tstep, lstep, n,
 						 c->tshift, c->smask, c->tmask);
 		else
@@ -388,14 +370,6 @@ ENTRY POINTS
 void PDR_DrawSpan (const pdr_spanctx_t *c, int y, int x0, int x1)
 {
 	byte	*dst = pdr_vbuf + y * pdr_stride + x0;
-
-	if (PDR_EXPERIMENT(2))
-	{
-		memset (dst, 15, x1 - x0);	/* experiment 2: no texturing at all */
-		return;
-	}
-	if (PDR_EXPERIMENT(3))
-		return;						/* experiment 3: no pixels */
 
 	switch (c->kind)
 	{

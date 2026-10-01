@@ -755,40 +755,11 @@ static void PDR_SetupEntities (void)
 
 	if (active_particles)
 	{
-		if (PDR_EXPERIMENT(16))		/* experiment 16: z only where particles land */
-		{
-			extern vec3_t	r_pright, r_pup, r_ppn;
-			particle_t		*p;
-			int				n = 0;
-
-			for (p=active_particles ; p ; p=p->next, n++)
-			{
-				vec3_t	local;
-				float	z, zi;
-				int		u, v;
-
-				VectorSubtract (p->org, r_origin, local);
-				z = DotProduct (local, vpn);
-				if (z < PARTICLE_Z_CLIP)
-					continue;
-				zi = 1.0f / z;
-				u = (int)(pdr_xcenter + zi * xscaleshrink * DotProduct (local, vright) + 0.5f);
-				v = (int)(pdr_ycenter - zi * yscaleshrink * DotProduct (local, vup) + 0.5f);
-				rect[0] = u;
-				rect[1] = v;
-				rect[2] = u + 4;		/* (particles are at most 4 pixels here) */
-				rect[3] = v + 4;
-				PDR_AddZRect (rect);
-			}
-		}
-		else
-		{
-			rect[0] = pdr_vx;
-			rect[1] = pdr_vy;
-			rect[2] = pdr_vx + pdr_vw;
-			rect[3] = pdr_vy + pdr_vh;
-			PDR_AddZRect (rect);
-		}
+		rect[0] = pdr_vx;
+		rect[1] = pdr_vy;
+		rect[2] = pdr_vx + pdr_vw;
+		rect[3] = pdr_vy + pdr_vh;
+		PDR_AddZRect (rect);
 	}
 }
 

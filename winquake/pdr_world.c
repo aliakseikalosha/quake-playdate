@@ -642,34 +642,21 @@ static void PDR_DrawFaces (void)
 	int		d;
 
 	PROF_BEGINF(P_SPANS);
-	if (PDR_EXPERIMENT(17))		/* experiment 17: no drawing phase */
-		pdr_numdfaces = 0;
 	for (d=0 ; d<pdr_numdfaces ; d++)
 	{
 		const vface_t	*df = &pdr_dfaces[d];
 		const unsigned	*sp = &pdr_dspans[df->firstspan];
 		pdr_spanctx_t	ctx;
 		int				i;
-		byte			lbuf[17*17 + 17 + 2 + 3];
 
 		PDR_SetupFace (df, &ctx);
-		if (ctx.light && PDR_EXPERIMENT(15))	/* experiment 15: the light block on the stack */
-		{
-			int	size = ctx.lw * ctx.lh + ctx.lw + 2;
-
-			if (size <= (int)sizeof(lbuf))
-			{
-				memcpy (lbuf, ctx.light, size);
-				ctx.light = lbuf;
-			}
-		}
 		for (i=0 ; i<df->nspans ; i++)
 		{
 			unsigned	v = sp[i];
 			int			y = v & 1023, x0 = (v >> 10) & 1023, x1 = v >> 20;
 
 			PDR_DrawSpan (&ctx, y, x0, x1);
-			if (pdr_zany && !PDR_EXPERIMENT(6))	/* experiment 6: no z */
+			if (pdr_zany)
 			{
 				int	r = y - pdr_vy, a = x0, b = x1;
 
@@ -912,8 +899,6 @@ static void PDR_RasterFace (faceinfo_t *fi, const float (*verts)[3], int nverts,
 		return;
 	}
 	PDR_CNT (pdr_c_rows += (ybot - ytop) / pdr_ystep);
-	if (PDR_EXPERIMENT(12))		/* experiment 12: no rows / coverage / spans */
-		return;
 	PDR_RasterRows (fi, pu, pv, n, ytop, ybot);
 }
 
@@ -1475,7 +1460,6 @@ static int PDR_DistClass (const short *mm)
 	return 0;
 }
 
-static qboolean	pdr_walkonly;	/* (experiment 13: a second walk that draws nothing) */
 
 static void PDR_WorldFace (int fi, int clip)
 {
@@ -1503,15 +1487,8 @@ static void PDR_WorldFace (int fi, int clip)
 	info.tb = &pdr_wbasis;
 	info.ent = NULL;
 	info.dface = -1;
-	if (pdr_walkonly || PDR_EXPERIMENT(18))		/* experiment 18: faces stop after the sphere test */
-		return;
 	PROF_BEGINF(P_FACE);
 	PDR_RasterFace (&info, (const float (*)[3])info.f->verts, info.f->numverts, clip & 15);
-	if (PDR_EXPERIMENT(14))		/* experiment 14: the same face again, its data now cached */
-	{
-		info.dface = -1;
-		PDR_RasterFace (&info, (const float (*)[3])info.f->verts, info.f->numverts, clip & 15);
-	}
 	PROF_ENDF(P_FACE);
 }
 
@@ -1550,7 +1527,7 @@ static void PDR_VisitLeaf (int leaf, int clip)
 	}
 
 	PROF_ENDF(P_WMARK);
-	if (BIT_TEST (pdr_leafhasfrag, leaf) && !(clip & CLIP_FAR) && !pdr_walkonly)
+	if (BIT_TEST (pdr_leafhasfrag, leaf) && !(clip & CLIP_FAR))
 		PDR_DrawLeafFragments (leaf);
 }
 
@@ -1644,7 +1621,7 @@ static void PDR_Walk (void)
 				{
 					int	fi = first + i;
 
-					if (BIT_TEST (pdr_facevis, fi) && !PDR_EXPERIMENT(10))	/* experiment 10: walk only */
+					if (BIT_TEST (pdr_facevis, fi))
 						PDR_WorldFace (fi, clip);
 				}
 				PROF_ENDF(P_WSURFS);
@@ -1727,16 +1704,6 @@ static void PDR_DrawWorldWith (uint32_t *cov)
 	memset (pdr_facevis, 0, pdr_facevis_bytes);
 	pdr_numdfaces = pdr_numdspans = 0;
 	PDR_Walk ();
-	if (PDR_EXPERIMENT(13))		/* experiment 13: walk again, the data now cached */
-	{
-		int	covered = pdr_covered;
-
-		pdr_walkonly = true;
-		pdr_covered = 0;		/* (no early end) */
-		PDR_Walk ();
-		pdr_walkonly = false;
-		pdr_covered = covered;
-	}
 	PDR_DrawFaces ();
 	PROF_BEGINF(P_OTHER);
 	if (pdr_covered < pdr_covtotal)

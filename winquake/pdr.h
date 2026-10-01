@@ -145,7 +145,8 @@ extern float	pdr_scale_for_mip;
 extern float	pdr_maxdist2;
 extern qboolean	pdr_fullbright;
 
-/* PD_PDR_AB (profiling): experiment PDR_EXP runs on the frames where pd_asm_on is 0 */
+/* PD_PDR_AB (profiling, cmake -DPD_PDR_EXP=n): code under `if (PDR_EXPERIMENT(n))` runs on the
+   frames where pd_asm_on is 0, so one device run times both variants (scripts/pd-report.py --ab) */
 #ifdef PD_PDR_AB
 extern int	pd_asm_on;
 #define PDR_EXPERIMENT(n)	(PDR_EXP == (n) && !pd_asm_on)
