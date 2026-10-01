@@ -1081,7 +1081,11 @@ void pdprof_frame_end(void)
 		n += snprintf(batch + blen + n, sizeof(batch) - blen - n, ",%u", (unsigned)pdprof_cnt[i]);
 	n += snprintf(batch + blen + n, sizeof(batch) - blen - n, ",%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d\n",
 		cl_numvisedicts, r_amodels_drawn, nparts,
+#ifdef PD_NEW_RENDERER
+		0, 0,	/* (the new renderer has no edge or surface lists) */
+#else
 		(int)(edge_p - r_edges), (int)(surface_p - surfaces),
+#endif
 		(int)(cl.time * 1000), key_dest == key_game, cls.demoplayback, sv.active ? sv.num_edicts : 0,
 		ASM_COL(), ASM_BAD_COL());
 	if (n > 0 && n < (int)sizeof(batch) - blen)

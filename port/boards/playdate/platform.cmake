@@ -55,13 +55,17 @@ option(PD_FAST_FACES "Stack-based world face edge emission" ON)
 # Surface cache bitmaps built row by row (full-line stores), see winquake/r_surf.c
 option(PD_FAST_SURFACES "Row-order surface cache build" ON)
 
+# The renderer: the new one written for the Playdate (winquake/pdr_*.c, see winquake/pdr.h) or
+# Quake's original software refresh (winquake/r_*.c, d_*.c) with the earlier optimisations below.
+option(PD_NEW_RENDERER "Use the Playdate renderer (winquake/pdr_*.c) instead of Quake's software refresh" ON)
+
 # Hand-written Thumb-2 versions of the hottest loops (winquake/*_arm.S, see winquake/pd_asm.h);
 # device builds only. With PD_PROFILE, PD_ASM_AB picks them or the C versions frame by frame
 # (compare with scripts/pd-report.py --ab) and PD_ASM_CHECK runs both and counts differing pixels.
 option(PD_ASM "Use the ARM assembly versions of hot loops on the device" ON)
 option(PD_ASM_AB "With PD_PROFILE and PD_ASM: assembly on half of the frames, C on the others" OFF)
 option(PD_ASM_CHECK "With PD_PROFILE and PD_ASM: check the assembly against the C on every call" OFF)
-if(PD_ASM AND TOOLCHAIN STREQUAL "armgcc")
+if(PD_ASM AND TOOLCHAIN STREQUAL "armgcc" AND NOT PD_NEW_RENDERER)
 	set(PD_ASM_BUILD ON)
 else()
 	set(PD_ASM_BUILD OFF)
@@ -82,6 +86,7 @@ set(PD_BENCH_FIRST 1 CACHE STRING "With PD_BENCH: the demo to start with (1-3)")
 
 add_compile_definitions(
 	QEMBD_PLAYDATE=1
+	$<$<BOOL:${PD_NEW_RENDERER}>:PD_NEW_RENDERER=1>
 	$<$<BOOL:${PD_FAST_EDGES}>:PD_FAST_EDGES=1>
 	$<$<BOOL:${PD_FAST_ALIAS}>:PD_FAST_ALIAS=1>
 	$<$<BOOL:${PD_FAST_FACES}>:PD_FAST_FACES=1>

@@ -352,6 +352,94 @@ static int frames_mode(const char *prefix)
 	return 0;
 }
 
+/* the half-resolution 3D view (before the 1-bit dither) as a PPM, with the base palette */
+static void write_view_ppm(const char *path)
+{
+	extern const byte *qembd_lowres_src;
+	extern int qembd_lowres_stride;
+	FILE *f = fopen(path, "wb");
+	int x, y, x0 = qembd_lowres_rect[0] / 2, y0 = qembd_lowres_rect[1] / 2;
+	int w = qembd_lowres_rect[2] / 2, h = qembd_lowres_rect[3] / 2;
+
+	if (!f || !qembd_lowres_src)
+		return;
+	fprintf(f, "P6\n%d %d\n255\n", w, h);
+	for (y = 0; y < h; y++)
+		for (x = 0; x < w; x++) {
+			byte c = qembd_lowres_src[(y0 + y) * qembd_lowres_stride + x0 + x];
+
+			fputc(host_basepal[c * 3], f);
+			fputc(host_basepal[c * 3 + 1], f);
+			fputc(host_basepal[c * 3 + 2], f);
+		}
+	fclose(f);
+}
+
+/*
+ * HSHOTS=<dir>: plays the demos in HDEMOS (default "1 2 3") as timedemos on the fake 33 ms clock and
+ * writes, every HEVERY frames (default 25), the 3D view as <dir>/dD_NNNN.ppm and the LCD as
+ * <dir>/dD_NNNN.pbm. Two builds (the old and the new renderer) give comparable pictures.
+ */
+static int shots_mode(const char *dir)
+{
+	const char *demos = getenv("HDEMOS") ? getenv("HDEMOS") : "1 2 3";
+	int every = getenv("HEVERY") ? atoi(getenv("HEVERY")) : 25;
+	const char *p;
+	char path[512];
+	int total = 0;
+
+	for (p = demos; *p; p++) {
+		int d, started = 0, i;
+		char c[32];
+#ifdef PD_NEW_RENDERER
+		extern int pdr_c_nodes, pdr_c_leafs, pdr_c_faces, pdr_c_drawn, pdr_c_occl, pdr_c_spans, pdr_c_pixels;
+		extern int pdr_c_lbuild, pdr_c_aliasmodels, pdr_c_atris, pdr_c_averts;
+		double acc[11] = {0};
+		int nacc = 0;
+#endif
+
+		if (*p < '1' || *p > '9')
+			continue;
+		d = *p - '0';
+		snprintf(c, sizeof(c), "timedemo demo%d\n", d);
+		cmd(c);
+		for (i = 0; i < 5000; i++) {
+			run(1);
+			if (cls.timedemo) {
+				started = 1;
+				key_dest = key_game;
+			} else if (started)
+				break;
+#ifdef PD_NEW_RENDERER
+			if (started) {
+				int k = 0;
+
+				acc[k++] += pdr_c_nodes; acc[k++] += pdr_c_leafs; acc[k++] += pdr_c_faces; acc[k++] += pdr_c_drawn;
+				acc[k++] += pdr_c_occl; acc[k++] += pdr_c_spans; acc[k++] += pdr_c_pixels; acc[k++] += pdr_c_lbuild;
+				acc[k++] += pdr_c_aliasmodels; acc[k++] += pdr_c_atris; acc[k++] += pdr_c_averts;
+				nacc++;
+			}
+#endif
+			if (started && i % every == 0) {
+				snprintf(path, sizeof(path), "%s/d%d_%04d.ppm", dir, d, i);
+				write_view_ppm(path);
+				snprintf(path, sizeof(path), "%s/d%d_%04d.pbm", dir, d, i);
+				write_pbm(path);
+				total++;
+			}
+		}
+#ifdef PD_NEW_RENDERER
+		if (nacc)
+			printf("demo%d per frame: nodes %.0f leafs %.0f faces %.0f drawn %.0f occluded %.0f spans %.0f pixels %.0f "
+				   "lightbuilds %.1f amodels %.1f atris %.0f averts %.0f\n", d, acc[0] / nacc, acc[1] / nacc, acc[2] / nacc,
+				   acc[3] / nacc, acc[4] / nacc, acc[5] / nacc, acc[6] / nacc, acc[7] / nacc, acc[8] / nacc, acc[9] / nacc,
+				   acc[10] / nacc);
+#endif
+	}
+	printf("shots: %d pictures in %s\n", total, dir);
+	return 0;
+}
+
 static int menu_test(void)
 {
 	char path[256];
@@ -543,6 +631,8 @@ int main(int argc, char **argv)
 		return golden(getenv("HGOLD"));
 	if (getenv("HFRAMES"))
 		return frames_mode(getenv("HFRAMES"));
+	if (getenv("HSHOTS"))
+		return shots_mode(getenv("HSHOTS"));
 	if (getenv("HMENU"))
 		return menu_test();
 

@@ -7,6 +7,7 @@
 #   NO_LAZY_CHECK=1 ...                      for trees that predate the lazy low-res upscale
 #   NO_FAST_ALIAS=1 / NO_FAST_FACES=1 / NO_FAST_SURFACES=1   build the original alias rasterizer / world face code / surface builder
 #   NO_STACK=1                               keep the scratch buffers in static memory (see winquake/pd_stack.h)
+#   NEW=1                                    build the new renderer (winquake/pdr_*.c, PD_NEW_RENDERER) instead of r_*/d_*
 set -e
 HERE=$(cd "$(dirname "$0")" && pwd)
 TREE=${TREE:-$(cd "$HERE/../.." && pwd)}
@@ -31,13 +32,20 @@ INC=(-I"$TREE/include" -I"$TREE/winquake" -I"$TREE/port/boards/playdate" -I"$SDK
 CFLAGS=(-O1 -g -w -fno-common -fcommon "${DEFS[@]}" "${INC[@]}")
 
 WQ="chase cmd common console crc cvar draw host host_cmd keys mathlib menu model nonintel screen sbar zone view wad world
-    cl_demo cl_input cl_main cl_parse cl_tent d_edge d_fill d_init d_modech d_part d_polyse d_scan d_sky d_sprite d_surf
-    d_vars d_zpoint net_loop net_main pr_cmds pr_edict pr_exec r_aclip r_alias r_bsp r_light r_draw r_efrag r_edge r_misc
-    r_main r_sky r_sprite r_surf r_part r_vars sv_main sv_phys sv_move sv_user net_none"
+    cl_demo cl_input cl_main cl_parse cl_tent net_loop net_main pr_cmds pr_edict pr_exec r_efrag r_part
+    sv_main sv_phys sv_move sv_user net_none"
+if [ -n "$NEW" ]; then
+  WQ="$WQ pdr_main pdr_world pdr_span pdr_light pdr_alias pdr_sprite pdr_lowres"
+  DEFS+=(-DPD_NEW_RENDERER=1)
+  CFLAGS=(-O1 -g -w -fno-common -fcommon "${DEFS[@]}" "${INC[@]}")
+else
+  WQ="$WQ d_edge d_fill d_init d_modech d_part d_polyse d_scan d_sky d_sprite d_surf d_vars d_zpoint
+    r_aclip r_alias r_bsp r_light r_draw r_edge r_misc r_main r_sky r_sprite r_surf r_vars"
+fi
 pids=()
 for f in $WQ; do
   extra=()
-  if [ -z "$NO_LAZY_CHECK" ] && [ $f = d_scan ]; then extra=(-DD_UpscaleScreen=real_D_UpscaleScreen); fi
+  if [ -z "$NO_LAZY_CHECK" ] && { [ $f = d_scan ] || [ $f = pdr_lowres ]; }; then extra=(-DD_UpscaleScreen=real_D_UpscaleScreen); fi
   clang "${CFLAGS[@]}" "${extra[@]}" -c "$TREE/winquake/$f.c" -o "$O/$f.o" & pids+=($!)
 done
 for f in sys_port vid_port in_port cd_null; do clang "${CFLAGS[@]}" -c "$TREE/port/$f.c" -o "$O/$f.o" & pids+=($!); done
