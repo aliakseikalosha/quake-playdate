@@ -440,21 +440,30 @@ static void RasterTri (const araster_t *ar, const rvert_t *a, const rvert_t *b, 
 	GRAD(z, dzdu, dzdv);
 #undef GRAD
 
-	ystart = p0->v;
+	// rows clamped to the view: triangles that only cross the screen edges need no clipping
+	ystart = p0->v < pdr_vy ? pdr_vy : p0->v;
 	if (pdr_skip != 2 && PDR_ROW_SKIPPED(ystart))
 		ystart++;
-	for (y=ystart ; y<p2->v ; y+=(pdr_skip != 2 ? 2 : 1))
+	{
+	float	slong = d2u / d2v;
+	float	s1 = d1v != 0 ? d1u / d1v : 0;
+	float	s2 = p2->v != p1->v ? (float)(p2->u - p1->u) / (float)(p2->v - p1->v) : 0;
+	int		ds = (int)dsdu, dt = (int)dtdu, dl = (int)dldu, dz = (int)dzdu;
+
+	int		yend = p2->v > pdr_vy + pdr_vh ? pdr_vy + pdr_vh : p2->v;
+
+	for (y=ystart ; y<yend ; y+=(pdr_skip != 2 ? 2 : 1))
 	{
 		float	xlong, xshort, fy = (float)(y - p0->v), fx;
-		int		xl, xr, n, s, tt, l, z, ds, dt, dl, dz;
+		int		xl, xr, n, s, tt, l, z;
 		short	*pz;
 		byte	*pd;
 
-		xlong = p0->u + fy * d2u / d2v;
+		xlong = p0->u + fy * slong;
 		if (y < p1->v)
-			xshort = p0->u + fy * d1u / d1v;
+			xshort = p0->u + fy * s1;
 		else
-			xshort = p1->u + (float)(y - p1->v) * (p2->u - p1->u) / (float)(p2->v - p1->v);
+			xshort = p1->u + (float)(y - p1->v) * s2;
 		if (xlong < xshort)
 		{
 			xl = (int)ceilf (xlong);
@@ -478,7 +487,6 @@ static void RasterTri (const araster_t *ar, const rvert_t *a, const rvert_t *b, 
 		tt = p0->t + (int)(fx * dtdu + fy * dtdv);
 		l = p0->l + (int)(fx * dldu + fy * dldv);
 		z = p0->z + (int)(fx * dzdu + fy * dzdv);
-		ds = (int)dsdu; dt = (int)dtdu; dl = (int)dldu; dz = (int)dzdu;
 		pz = pdr_zbuf + y * pdr_stride + xl;
 		pd = pdr_vbuf + y * pdr_stride + xl;
 		do
@@ -501,6 +509,7 @@ static void RasterTri (const araster_t *ar, const rvert_t *a, const rvert_t *b, 
 			l += dl;
 			z += dz;
 		} while (--n);
+	}
 	}
 }
 
@@ -731,7 +740,7 @@ static void DrawModel (entity_t *e, qboolean viewmodel, asetup_t *a, amodel_t *a
 		if (v0->flags & v1->flags & v2->flags)
 			continue;		/* all off the same side */
 
-		if (!((v0->flags | v1->flags | v2->flags)))
+		if (!((v0->flags | v1->flags | v2->flags) & AF_Z))
 		{
 			const avert_t	*vv[3] = {v0, v1, v2};
 

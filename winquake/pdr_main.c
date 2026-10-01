@@ -568,29 +568,74 @@ static qboolean PDR_ViewModelDrawn (void)
 	return true;
 }
 
-/* static entities whose leaves are in the PVS join the visible list (R_StoreEfrags) */
+/*
+Static entities whose leaves are in the PVS join the visible list (R_StoreEfrags). Their leaves
+never change once the level is loaded, so they are listed compactly instead of following each
+entity's efrag chain every frame.
+*/
+#define STATIC_LEAFS	4
+
+typedef struct
+{
+	unsigned short	leaf[STATIC_LEAFS];
+	byte			numleafs;		/* 0xff: more than STATIC_LEAFS, follow the chain */
+} pstatic_t;
+
+static pstatic_t	pdr_statics[MAX_STATIC_ENTITIES];
+static int			pdr_numstatics = -1;
+static model_t		*pdr_staticsworld;
+
 static void PDR_StoreStatics (void)
 {
 	int		i;
 
-	for (i=0 ; i<cl.num_statics ; i++)
+	if (pdr_numstatics != cl.num_statics || pdr_staticsworld != cl.worldmodel)
 	{
-		entity_t	*e = &cl_static_entities[i];
-		efrag_t		*ef;
-
-		if (!e->model || e->visframe == r_framecount)
-			continue;
-		for (ef = e->efrag ; ef ; ef = ef->entnext)
+		for (i=0 ; i<cl.num_statics ; i++)
 		{
-			if (PDR_LeafVisible (ef->leaf - cl.worldmodel->leafs))
+			entity_t	*e = &cl_static_entities[i];
+			pstatic_t	*ps = &pdr_statics[i];
+			efrag_t		*ef;
+
+			ps->numleafs = 0;
+			if (!e->model)
+				continue;
+			for (ef = e->efrag ; ef ; ef = ef->entnext)
 			{
-				if (cl_numvisedicts < MAX_VISEDICTS)
+				if (ps->numleafs == STATIC_LEAFS)
 				{
-					cl_visedicts[cl_numvisedicts++] = e;
-					e->visframe = r_framecount;
+					ps->numleafs = 0xff;
+					break;
 				}
-				break;
+				ps->leaf[ps->numleafs++] = ef->leaf - cl.worldmodel->leafs;
 			}
+		}
+		pdr_numstatics = cl.num_statics;
+		pdr_staticsworld = cl.worldmodel;
+	}
+
+	for (i=0 ; i<pdr_numstatics ; i++)
+	{
+		const pstatic_t	*ps = &pdr_statics[i];
+		qboolean		vis = false;
+		int				j;
+
+		if (ps->numleafs == 0xff)
+		{
+			efrag_t	*ef;
+
+			for (ef = cl_static_entities[i].efrag ; ef && !vis ; ef = ef->entnext)
+				vis = PDR_LeafVisible (ef->leaf - cl.worldmodel->leafs);
+		}
+		else
+		{
+			for (j=0 ; j<ps->numleafs && !vis ; j++)
+				vis = PDR_LeafVisible (ps->leaf[j]);
+		}
+		if (vis && cl_numvisedicts < MAX_VISEDICTS)
+		{
+			cl_visedicts[cl_numvisedicts++] = &cl_static_entities[i];
+			cl_static_entities[i].visframe = r_framecount;
 		}
 	}
 }

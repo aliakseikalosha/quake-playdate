@@ -648,6 +648,7 @@ void R_RocketTrail (vec3_t start, vec3_t end, int type)
 }
 
 
+#ifndef PD_NEW_RENDERER	// the new renderer has its own (winquake/pdr_sprite.c)
 /*
 ===============
 R_DrawParticles
@@ -807,4 +808,4 @@ void R_DrawParticles (void)
 	D_EndParticles ();
 #endif
 }
-
+#endif

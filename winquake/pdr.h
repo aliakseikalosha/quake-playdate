@@ -130,6 +130,7 @@ typedef struct
 
 extern pdr_basis_t	pdr_wbasis;		/* world space */
 extern float	pdr_xcenter, pdr_ycenter, pdr_xscale, pdr_yscale, pdr_xscaleinv, pdr_yscaleinv;
+extern float	xscaleshrink, yscaleshrink;	/* particle projection (r_part.c's names) */
 extern float	pdr_umin, pdr_umax, pdr_vmin, pdr_vmax;	/* clamp limits for projected points */
 extern float	pdr_hw, pdr_hh;			/* half view width / height (frustum planes in view space) */
 extern int		pdr_vx, pdr_vy, pdr_vw, pdr_vh;	/* view rectangle in the view buffer */

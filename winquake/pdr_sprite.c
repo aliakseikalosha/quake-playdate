@@ -8,6 +8,9 @@
 #include "pdr.h"
 
 extern vec3_t	r_pright, r_pup, r_ppn;		/* r_part.c */
+extern particle_t	*active_particles, *free_particles;
+extern int		ramp1[8], ramp2[8], ramp3[8];
+extern cvar_t	sv_gravity;
 
 /*
 ==============================================================================
@@ -351,14 +354,14 @@ void PDR_DrawSprite (entity_t *e)
 /*
 ==============================================================================
 
-PARTICLES (D_DrawParticle)
+PARTICLES (PDR_DrawParticle)
 
 ==============================================================================
 */
 
 static int	pix_min, pix_max, pix_shift, y_aspect_shift, vrectright_particle, vrectbottom_particle;
 
-void D_StartParticles (void)
+static void PDR_StartParticles (void)
 {
 	pix_min = pdr_vw / 320;
 	if (pix_min < 1)
@@ -372,11 +375,11 @@ void D_StartParticles (void)
 	vrectbottom_particle = pdr_vy + pdr_vh - (pix_max << y_aspect_shift);
 }
 
-void D_EndParticles (void)
+static void PDR_EndParticles (void)
 {
 }
 
-void D_DrawParticle (particle_t *p)
+static inline void PDR_DrawParticle (particle_t *p)
 {
 	vec3_t	local, tr;
 	float	zi;
@@ -416,4 +419,117 @@ void D_DrawParticle (particle_t *p)
 			}
 		}
 	}
+}
+
+/*
+==============
+R_DrawParticles
+
+r_part.c's particle motion, unchanged, with the drawing inlined and the client clock (a double)
+converted once instead of compared per particle.
+==============
+*/
+void R_DrawParticles (void)
+{
+	particle_t	*p, *kill;
+	float		grav, time1, time2, time3, dvel, frametime;
+	float		now = pdr_time;
+	int			i;
+
+	PDR_StartParticles ();
+	VectorScale (vright, xscaleshrink, r_pright);
+	VectorScale (vup, yscaleshrink, r_pup);
+	VectorCopy (vpn, r_ppn);
+
+	frametime = cl.time - cl.oldtime;
+	time3 = frametime * 15;
+	time2 = frametime * 10;
+	time1 = frametime * 5;
+	grav = frametime * sv_gravity.value * 0.05f;
+	dvel = 4*frametime;
+
+	for ( ;; )
+	{
+		kill = active_particles;
+		if (kill && kill->die < now)
+		{
+			active_particles = kill->next;
+			kill->next = free_particles;
+			free_particles = kill;
+			continue;
+		}
+		break;
+	}
+
+	for (p=active_particles ; p ; p=p->next)
+	{
+		for ( ;; )
+		{
+			kill = p->next;
+			if (kill && kill->die < now)
+			{
+				p->next = kill->next;
+				kill->next = free_particles;
+				free_particles = kill;
+				continue;
+			}
+			break;
+		}
+
+		if (pdr_maxdist2 <= 0 || !R_BoxBeyond (p->org, p->org))
+			PDR_DrawParticle (p);
+
+		p->org[0] += p->vel[0]*frametime;
+		p->org[1] += p->vel[1]*frametime;
+		p->org[2] += p->vel[2]*frametime;
+
+		switch (p->type)
+		{
+		case pt_static:
+			break;
+		case pt_fire:
+			p->ramp += time1;
+			if (p->ramp >= 6)
+				p->die = -1;
+			else
+				p->color = ramp3[(int)p->ramp];
+			p->vel[2] += grav;
+			break;
+		case pt_explode:
+			p->ramp += time2;
+			if (p->ramp >=8)
+				p->die = -1;
+			else
+				p->color = ramp1[(int)p->ramp];
+			for (i=0 ; i<3 ; i++)
+				p->vel[i] += p->vel[i]*dvel;
+			p->vel[2] -= grav;
+			break;
+		case pt_explode2:
+			p->ramp += time3;
+			if (p->ramp >=8)
+				p->die = -1;
+			else
+				p->color = ramp2[(int)p->ramp];
+			for (i=0 ; i<3 ; i++)
+				p->vel[i] -= p->vel[i]*frametime;
+			p->vel[2] -= grav;
+			break;
+		case pt_blob:
+			for (i=0 ; i<3 ; i++)
+				p->vel[i] += p->vel[i]*dvel;
+			p->vel[2] -= grav;
+			break;
+		case pt_blob2:
+			for (i=0 ; i<2 ; i++)
+				p->vel[i] -= p->vel[i]*dvel;
+			p->vel[2] -= grav;
+			break;
+		case pt_grav:
+		case pt_slowgrav:
+			p->vel[2] -= grav;
+			break;
+		}
+	}
+	PDR_EndParticles ();
 }
