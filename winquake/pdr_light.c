@@ -161,7 +161,7 @@ typedef struct
 static void BuildBlock (lentry_t *e, pdr_brush_t *b, const pdr_face_t *f, qboolean dynamic, int slot)
 {
 	int			lw = (f->extents[0] >> 4) + 1, lh = (f->extents[1] >> 4) + 1, size = lw * lh;
-	const byte	*lightmap = b->model->lightdata + f->lightofs;
+	const byte	*lightmap = f->lightofs >= 0 ? b->model->lightdata + f->lightofs : NULL;
 	int			nmaps, m, s, t, i, k;
 	int			adj[MAXLIGHTMAPS];
 	static dlrun_t	dl[MAX_DLIGHTS];	/* (rarely used: kept off the small stack) */
@@ -169,7 +169,7 @@ static void BuildBlock (lentry_t *e, pdr_brush_t *b, const pdr_face_t *f, qboole
 	int			ambient = r_refdef.ambientlight << 8;
 	byte		*out = e->data;
 
-	for (nmaps=0 ; nmaps<MAXLIGHTMAPS && f->styles[nmaps] != 255 ; nmaps++)
+	for (nmaps=0 ; lightmap && nmaps<MAXLIGHTMAPS && f->styles[nmaps] != 255 ; nmaps++)
 		adj[nmaps] = pdr_lightstyle[f->styles[nmaps]];
 	for (m=0 ; m<MAXLIGHTMAPS ; m++)
 		e->styleval[m] = m < nmaps ? adj[m] : -1;
@@ -262,8 +262,10 @@ const byte *PDR_FaceLight (pdr_brush_t *b, int fi, const pdr_face_t *f, int *lco
 		*lconst = 0;
 		return NULL;
 	}
-	if (f->flags & PF_NOLIGHT)
+	dynamic = pdr_dlframe[slot] == r_framecount;
+	if ((f->flags & PF_NOLIGHT) && !dynamic)
 	{
+		// ambient only; a dynamic light still lights the face (a block, below), as R_BuildLightMap does
 		int	v = (255*256 - (r_refdef.ambientlight << 8)) >> 2;
 
 		if (v < (1 << 6))
@@ -271,8 +273,6 @@ const byte *PDR_FaceLight (pdr_brush_t *b, int fi, const pdr_face_t *f, int *lco
 		*lconst = (v >> 6) << 16;
 		return NULL;
 	}
-
-	dynamic = pdr_dlframe[slot] == r_framecount;
 	e = pdr_pool_entry (pdr_lightptr[slot]);
 	if (e && !dynamic && !e->dlight)
 	{
