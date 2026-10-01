@@ -108,6 +108,7 @@ typedef struct pdr_brush_s
 	int				numleafs;		/* including leaf 0 */
 	pdr_leaf_t		*leafs;
 	unsigned short	*marks;
+	float			(*spheres)[4];	/* per face: bounding sphere centre and radius */
 	int				facebase;		/* first slot of this model's faces in the per-face state arrays */
 } pdr_brush_t;
 
@@ -151,10 +152,32 @@ extern int	pd_asm_on;
 #define PDR_EXPERIMENT(n)	0
 #endif
 
+/* work counters (pdr_c_*): profiling and host builds only; on the device each would be a store
+   to slow memory in a hot loop */
+#if defined(PD_PROFILE) || defined(TARGET_SIMULATOR)
+#define PDR_CNT(x)	((void)(x))
+#else
+#define PDR_CNT(x)	((void)0)
+#endif
+
 #define PDR_ROW_SKIPPED(y)	(((y) & 1) == pdr_skip)
+
+/* Per-frame copies of the client clock. cl.time is a double, and this FPU only does single
+   precision: a double multiply or compare is a library call of several microseconds. */
+extern float	pdr_time;			/* cl.time */
+extern int		pdr_time10;			/* (int)(cl.time * 10): texture animation */
+extern int		pdr_turbofs;		/* water and underwater warp phase */
+extern int		pdr_numdlights;		/* the dynamic lights alive this frame */
+extern int		pdr_dlightidx[MAX_DLIGHTS];
+
+/* sinf and cosf take over a microsecond each here; this is a few dozen cycles */
+void PDR_SinCos (float degrees, float *s, float *c);
+void PDR_AngleVectors (const vec3_t angles, vec3_t forward, vec3_t right, vec3_t up);
 
 /* world-space frustum planes for box culling (unnormalised; inside >= 0) */
 extern float	pdr_frustum[4][4];
+extern float	pdr_frustum_len[4];	/* length of each plane's normal */
+extern float	pdr_frustum_abs[4][3];	/* absolute values of the normals */
 extern int		pdr_frustum_idx[4][6];
 
 /* rows that need z (union of entity rectangles), per view row: [pdr_zx0, pdr_zx1) */
@@ -228,7 +251,9 @@ extern byte	**pdr_lightptr;			/* per face slot: its light block, NULL = none */
 /* ------------------------------------------------------------------ entities */
 
 void PDR_DrawAliasModel (entity_t *e, qboolean viewmodel);
+void PDR_ResetAliasSetups (void);
 qboolean PDR_AliasRect (entity_t *e, int rect[4]);
+qboolean PDR_AliasCulled (entity_t *e);
 void PDR_DrawSprite (entity_t *e);
 qboolean PDR_SpriteRect (entity_t *e, int rect[4]);
 void PDR_NewMapAlias (void);

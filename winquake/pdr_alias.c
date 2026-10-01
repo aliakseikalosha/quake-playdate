@@ -46,10 +46,12 @@ typedef struct
 	int			numverts, numtris;
 	atri_t		*tris;
 	ast_t		*st;
+	float		radius;		/* bounding radius of every frame around the entity origin */
 } amodel_t;
 
 #define MAX_AMODELS	256
 static amodel_t	amodels[MAX_AMODELS];
+static model_t	*amodel_ptr[MAX_AMODELS];	/* amodels[i].model, packed for a cheap search */
 static int		numamodels;
 static byte		apool[48 * 1024];	/* models that turn up after the level was loaded */
 static int		apoolused;
@@ -76,8 +78,32 @@ static amodel_t *BuildAModel (model_t *m, qboolean hunk)
 		mem = apool + apoolused;
 		apoolused += (size + 3) & ~3;
 	}
+	amodel_ptr[numamodels] = m;
 	am = &amodels[numamodels++];
 	am->model = m;
+	{
+		float	r2 = 0;
+		int		f, c, j;
+
+		for (f=0 ; f<pmdl->numframes ; f++)
+		{
+			for (c=0 ; c<8 ; c++)
+			{
+				float	d2 = 0;
+
+				for (j=0 ; j<3 ; j++)
+				{
+					float	v = ((c >> j) & 1) ? hdr->frames[f].bboxmax.v[j] : hdr->frames[f].bboxmin.v[j];
+
+					v = v * pmdl->scale[j] + pmdl->scale_origin[j];
+					d2 += v * v;
+				}
+				if (d2 > r2)
+					r2 = d2;
+			}
+		}
+		am->radius = sqrtf (r2) + 1;
+	}
 	am->numverts = pmdl->numverts;
 	am->numtris = pmdl->numtris;
 	am->tris = (atri_t *)mem;
@@ -102,9 +128,23 @@ static amodel_t *AModelFor (model_t *m)
 	int		i;
 
 	for (i=0 ; i<numamodels ; i++)
-		if (amodels[i].model == m)
+		if (amodel_ptr[i] == m)
 			return &amodels[i];
 	return BuildAModel (m, false);
+}
+
+/* entirely outside the view? (its bounding sphere, before anything of the model is read) */
+qboolean PDR_AliasCulled (entity_t *e)
+{
+	amodel_t	*am = AModelFor (e->model);
+	int			i;
+
+	if (!am)
+		return false;
+	for (i=0 ; i<4 ; i++)
+		if (DotProduct (pdr_frustum[i], e->origin) + pdr_frustum[i][3] < -am->radius * pdr_frustum_len[i])
+			return true;
+	return false;
 }
 
 void PDR_NewMapAlias (void)
@@ -149,7 +189,7 @@ static void SetupTransform (entity_t *e, asetup_t *a)
 	angles[ROLL] = e->angles[ROLL];
 	angles[PITCH] = -e->angles[PITCH];
 	angles[YAW] = e->angles[YAW];
-	AngleVectors (angles, a->forward, a->right, a->up);
+	PDR_AngleVectors (angles, a->forward, a->right, a->up);
 	VectorSubtract (r_origin, e->origin, org);
 
 // model axes, scale and offset (R_AliasSetUpTransform's rotationmatrix)
@@ -205,7 +245,7 @@ static void SetupFrameVerts (entity_t *e, asetup_t *a)
 	intervals = (float *)((byte *)a->hdr + group->intervals);
 	n = group->numframes;
 	full = intervals[n-1];
-	time = cl.time + e->syncbase;
+	time = pdr_time + e->syncbase;
 	target = time - ((int)(time / full)) * full;
 	for (i=0 ; i<n-1 ; i++)
 		if (intervals[i] > target)
@@ -229,7 +269,7 @@ static byte *SetupSkin (entity_t *e, asetup_t *a)
 		maliasskingroup_t	*group = (maliasskingroup_t *)((byte *)a->hdr + desc->skin);
 		float				*intervals = (float *)((byte *)a->hdr + group->intervals);
 		int					i, n = group->numskins;
-		float				full = intervals[n-1], time = cl.time + e->syncbase;
+		float				full = intervals[n-1], time = pdr_time + e->syncbase;
 		float				target = time - ((int)(time / full)) * full;
 
 		for (i=0 ; i<n-1 ; i++)
@@ -238,6 +278,32 @@ static byte *SetupSkin (entity_t *e, asetup_t *a)
 		desc = &group->skindescs[i];
 	}
 	return (byte *)a->hdr + desc->skin;
+}
+
+/* PDR_AliasRect's setup is kept for PDR_DrawAliasModel later in the frame */
+#define MAX_ASETUPS	64
+static entity_t	*asetup_ent[MAX_ASETUPS];
+static asetup_t	asetup_saved[MAX_ASETUPS];
+static int		numasetups;
+
+void PDR_ResetAliasSetups (void)
+{
+	numasetups = 0;
+}
+
+static void SetupModelCached (entity_t *e, asetup_t *a)
+{
+	int		i;
+
+	for (i=0 ; i<numasetups ; i++)
+	{
+		if (asetup_ent[i] == e)
+		{
+			*a = asetup_saved[i];
+			return;
+		}
+	}
+	SetupModel (e, a);
 }
 
 /*
@@ -258,6 +324,11 @@ qboolean PDR_AliasRect (entity_t *e, int rect[4])
 	int			i, n = 0;
 
 	SetupModel (e, &a);
+	if (numasetups < MAX_ASETUPS)
+	{
+		asetup_ent[numasetups] = e;
+		asetup_saved[numasetups++] = a;
+	}
 	for (i=0 ; i<8 ; i++)
 	{
 		float	p[3];
@@ -554,13 +625,13 @@ static void DrawModel (entity_t *e, qboolean viewmodel, asetup_t *a, amodel_t *a
 		if (viewmodel && j < 24)
 			j = 24;		// always give some light on gun
 		amb = shd = j;
-		for (lnum=0 ; lnum<MAX_DLIGHTS ; lnum++)
+		for (lnum=0 ; lnum<pdr_numdlights ; lnum++)
 		{
-			dlight_t	*dl = &cl_dlights[lnum];
+			dlight_t	*dl = &cl_dlights[pdr_dlightidx[lnum]];
 			vec3_t		dist;
 			float		add;
 
-			if (dl->die < cl.time || (viewmodel && !dl->radius))
+			if (viewmodel && !dl->radius)
 				continue;
 			VectorSubtract (e->origin, dl->origin, dist);
 			add = dl->radius - Length (dist);
@@ -647,7 +718,7 @@ static void DrawModel (entity_t *e, qboolean viewmodel, asetup_t *a, amodel_t *a
 			o->flags = f;
 		}
 	}
-	pdr_c_averts += am->numverts;
+	PDR_CNT (pdr_c_averts += am->numverts);
 
 // triangles
 	for (i=0 ; i<am->numtris ; i++)
@@ -681,7 +752,7 @@ static void DrawModel (entity_t *e, qboolean viewmodel, asetup_t *a, amodel_t *a
 				r[k].z = vv[k]->z;
 			}
 			RasterTri (&ar, &r[0], &r[1], &r[2]);
-			pdr_c_atris++;
+			PDR_CNT (pdr_c_atris++);
 			continue;
 		}
 
@@ -744,7 +815,7 @@ static void DrawModel (entity_t *e, qboolean viewmodel, asetup_t *a, amodel_t *a
 				}
 				RasterTri (&ar, &r[0], &r[1], &r[2]);
 			}
-			pdr_c_atris++;
+			PDR_CNT (pdr_c_atris++);
 		}
 	}
 }
@@ -760,8 +831,8 @@ void PDR_DrawAliasModel (entity_t *e, qboolean viewmodel)
 	am = AModelFor (e->model);
 	if (!am || am->numverts > MAX_PDR_AVERTS)
 		return;
-	SetupModel (e, &a);
-	pdr_c_aliasmodels++;
+	SetupModelCached (e, &a);
+	PDR_CNT (pdr_c_aliasmodels++);
 
 	if (PD_StackRoom (am->numverts * sizeof(avert_t) + 1536))
 	{

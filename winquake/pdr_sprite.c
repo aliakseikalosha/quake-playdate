@@ -34,7 +34,7 @@ static mspriteframe_t *GetSpriteFrame (entity_t *e, msprite_t *psprite)
 	intervals = group->intervals;
 	n = group->numframes;
 	full = intervals[n-1];
-	time = cl.time + e->syncbase;
+	time = pdr_time + e->syncbase;
 	target = time - ((int)(time / full)) * full;
 	for (i=0 ; i<n-1 ; i++)
 		if (intervals[i] > target)
@@ -102,12 +102,13 @@ static qboolean SetupSprite (entity_t *e, sprite_t *sp)
 	}
 	else if (psprite->type == SPR_ORIENTED)
 	{
-		AngleVectors (e->angles, sp->vpn, sp->vright, sp->vup);
+		PDR_AngleVectors (e->angles, sp->vpn, sp->vright, sp->vup);
 	}
 	else if (psprite->type == SPR_VP_PARALLEL_ORIENTED)
 	{
-		float	angle = e->angles[ROLL] * (M_PI/180.0f);
-		float	sr = sinf (angle), cr = cosf (angle);
+		float	sr, cr;
+
+		PDR_SinCos (e->angles[ROLL], &sr, &cr);
 
 		for (i=0 ; i<3 ; i++)
 		{

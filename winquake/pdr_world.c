@@ -28,6 +28,7 @@ int					pdr_totalfaces;
 int		*pdr_dlframe;
 unsigned	*pdr_dlbits;
 
+int		pdr_c_calls, pdr_c_andrej, pdr_c_cliprej, pdr_c_norows, pdr_c_rows, pdr_c_verts;
 int		pdr_c_nodes, pdr_c_leafs, pdr_c_faces, pdr_c_drawn, pdr_c_occl, pdr_c_spans, pdr_c_pixels;
 
 /*
@@ -104,6 +105,7 @@ static void PDR_BuildBrush (pdr_brush_t *b, model_t *m)
 		size += sizeof(pdr_face_t) + m->surfaces[i].numedges * 12;
 	b->facedata = Hunk_AllocName (size, "pdrfaces");
 	b->faceofs = Hunk_AllocName (numsurfs * sizeof(unsigned), "pdr");
+	b->spheres = Hunk_AllocName (numsurfs * sizeof(b->spheres[0]), "pdr");
 	p = b->facedata;
 	for (i=0 ; i<numsurfs ; i++)
 	{
@@ -155,6 +157,30 @@ static void PDR_BuildBrush (pdr_brush_t *b, model_t *m)
 			else
 				v = &m->vertexes[m->edges[-lindex].v[1]];
 			VectorCopy (v->position, f->verts[j]);
+		}
+		// bounding sphere, so the frustum can reject the face without reading its record
+		{
+			float	mins[3] = {1e30f, 1e30f, 1e30f}, maxs[3] = {-1e30f, -1e30f, -1e30f}, r = 0;
+
+			for (j=0 ; j<s->numedges ; j++)
+				for (k=0 ; k<3 ; k++)
+				{
+					if (f->verts[j][k] < mins[k]) mins[k] = f->verts[j][k];
+					if (f->verts[j][k] > maxs[k]) maxs[k] = f->verts[j][k];
+				}
+			for (k=0 ; k<3 ; k++)
+				b->spheres[i][k] = (mins[k] + maxs[k]) * 0.5f;
+			for (j=0 ; j<s->numedges ; j++)
+			{
+				vec3_t	d;
+				float	l;
+
+				VectorSubtract (f->verts[j], b->spheres[i], d);
+				l = DotProduct (d, d);
+				if (l > r)
+					r = l;
+			}
+			b->spheres[i][3] = sqrtf (r) + 1.0f;
 		}
 		p += sizeof(pdr_face_t) + s->numedges * 12;
 	}
@@ -461,7 +487,7 @@ texture_t *PDR_TextureAnimation (texture_t *base, int frame)
 		base = base->alternate_anims;
 	if (!base->anim_total)
 		return base;
-	relative = (int)(cl.time*10) % base->anim_total;
+	relative = pdr_time10 % base->anim_total;
 	count = 0;
 	while (base->anim_min > relative || base->anim_max <= relative)
 	{
@@ -594,14 +620,27 @@ static void PDR_DrawFaces (void)
 	int		d;
 
 	PROF_BEGINF(P_SPANS);
+	if (PDR_EXPERIMENT(17))		/* experiment 17: no drawing phase */
+		pdr_numdfaces = 0;
 	for (d=0 ; d<pdr_numdfaces ; d++)
 	{
 		const vface_t	*df = &pdr_dfaces[d];
 		const unsigned	*sp = &pdr_dspans[df->firstspan];
 		pdr_spanctx_t	ctx;
 		int				i;
+		byte			lbuf[17*17 + 17 + 2 + 3];
 
 		PDR_SetupFace (df, &ctx);
+		if (ctx.light && PDR_EXPERIMENT(15))	/* experiment 15: the light block on the stack */
+		{
+			int	size = ctx.lw * ctx.lh + ctx.lw + 2;
+
+			if (size <= (int)sizeof(lbuf))
+			{
+				memcpy (lbuf, ctx.light, size);
+				ctx.light = lbuf;
+			}
+		}
 		for (i=0 ; i<df->nspans ; i++)
 		{
 			unsigned	v = sp[i];
@@ -621,7 +660,7 @@ static void PDR_DrawFaces (void)
 			}
 		}
 	}
-	pdr_c_drawn += pdr_numdfaces;
+	PDR_CNT (pdr_c_drawn += pdr_numdfaces);
 	pdr_numdfaces = pdr_numdspans = 0;
 	PROF_ENDF(P_SPANS);
 }
@@ -654,8 +693,8 @@ static void PDR_Run (faceinfo_t *fi, int y, int x0, int x1)
 		df = &pdr_dfaces[fi->dface];
 	pdr_dspans[pdr_numdspans++] = SPAN_PACK (y, x0, x1);
 	df->nspans++;
-	pdr_c_spans++;
-	pdr_c_pixels += x1 - x0;
+	PDR_CNT (pdr_c_spans++);
+	PDR_CNT (pdr_c_pixels += x1 - x0);
 	pdr_covered += x1 - x0;
 }
 
@@ -666,6 +705,28 @@ static void PDR_CoverSpan (faceinfo_t *fi, int y, int x0, int x1)
 	int			b0 = x0 - pdr_vx, b1 = x1 - pdr_vx;
 	int			w, w0 = b0 >> 5, w1 = (b1 - 1) >> 5;
 	int			runstart = -1;
+
+	if (w0 == w1)
+	{
+		// within one word (most spans at this resolution)
+		uint32_t	m = (0xffffffffu >> (32 - (b1 - b0))) << (b0 & 31);
+		uint32_t	unc = m & ~cov[w0];
+		int			base = (w0 << 5) + pdr_vx;
+
+		if (!unc)
+			return;
+		cov[w0] |= m;
+		do
+		{
+			int			s = __builtin_ctz (unc);
+			uint32_t	rest = ~(unc >> s);
+			int			len = rest ? __builtin_ctz (rest) : 32 - s;
+
+			PDR_Run (fi, y, base + s, base + s + len);
+			unc &= len >= 32 ? 0 : ~(((1u << len) - 1) << s);
+		} while (unc);
+		return;
+	}
 
 	for (w=w0 ; w<=w1 ; w++)
 	{
@@ -737,6 +798,8 @@ static void PDR_RasterFace (faceinfo_t *fi, const float (*verts)[3], int nverts,
 	int			i, n, p, ytop, ybot, y;
 
 // transform
+	PDR_CNT (pdr_c_calls++);
+	PDR_CNT (pdr_c_verts += nverts);
 	in = bufa;
 	for (i=0 ; i<nverts ; i++)
 	{
@@ -754,24 +817,28 @@ static void PDR_RasterFace (faceinfo_t *fi, const float (*verts)[3], int nverts,
 // clip: only against the planes some vertex is outside of; out of the view if all are outside one
 	if (clipflags)
 	{
-		int	orcode = 0, andcode = 15;
+		int	orcode = 0, andcode = 15, planes[4], np = 0, k;
 
+		for (p=0 ; p<4 ; p++)
+			if (clipflags & (1 << p))
+				planes[np++] = p;
 		for (i=0 ; i<n ; i++)
 		{
 			int	code = 0;
 
-			for (p=0 ; p<4 ; p++)
+			for (k=0 ; k<np ; k++)
 			{
-				const float	*pl = pdr_viewplanes[p];
+				const float	*pl = pdr_viewplanes[planes[k]];
 
-				if ((clipflags & (1 << p)) && pl[0] * in[i].x + pl[1] * in[i].y + pl[2] * in[i].z < 0)
-					code |= 1 << p;
+				if (pl[0] * in[i].x + pl[1] * in[i].y + pl[2] * in[i].z < 0)
+					code |= 1 << planes[k];
 			}
 			orcode |= code;
 			andcode &= code;
 		}
 		if (andcode)
 		{
+			PDR_CNT (pdr_c_andrej++);
 			return;
 		}
 		clipflags = orcode;
@@ -784,6 +851,7 @@ static void PDR_RasterFace (faceinfo_t *fi, const float (*verts)[3], int nverts,
 		n = ClipToPlane (in, n, out, nverts + 4, p);
 		if (n < 3)
 		{
+			PDR_CNT (pdr_c_cliprej++);
 			return;
 		}
 		tmp = in; in = out; out = tmp;
@@ -817,6 +885,12 @@ static void PDR_RasterFace (faceinfo_t *fi, const float (*verts)[3], int nverts,
 	if (pdr_skip != 2 && ytop < ybot && PDR_ROW_SKIPPED(ytop))
 		ytop++;
 	if (ytop >= ybot)
+	{
+		PDR_CNT (pdr_c_norows++);
+		return;
+	}
+	PDR_CNT (pdr_c_rows += (ybot - ytop) / pdr_ystep);
+	if (PDR_EXPERIMENT(12))		/* experiment 12: no rows / coverage / spans */
 		return;
 	PDR_RasterRows (fi, pu, pv, n, ytop, ybot);
 }
@@ -869,7 +943,7 @@ static void PDR_RasterRows (faceinfo_t *fi, const float *pu, const float *pv, in
 	}
 
 // spans
-	pdr_c_faces++;
+	PDR_CNT (pdr_c_faces++);
 	{
 
 		for (y=ytop ; y<ybot ; y+=pdr_ystep)
@@ -1238,21 +1312,18 @@ void PDR_AddBmodel (entity_t *e, pdr_brush_t *b, model_t *m)
 		float	a, s, c, t1[3][3], t2[3][3], t3[3][3];
 		int		j, k;
 
-		a = e->angles[YAW] * (M_PI/180.0f);
-		s = sinf (a); c = cosf (a);
+		PDR_SinCos (e->angles[YAW], &s, &c);
 		t1[0][0] = c; t1[0][1] = s; t1[0][2] = 0;
 		t1[1][0] = -s; t1[1][1] = c; t1[1][2] = 0;
 		t1[2][0] = 0; t1[2][1] = 0; t1[2][2] = 1;
-		a = e->angles[PITCH] * (M_PI/180.0f);
-		s = sinf (a); c = cosf (a);
+		PDR_SinCos (e->angles[PITCH], &s, &c);
 		t2[0][0] = c; t2[0][1] = 0; t2[0][2] = -s;
 		t2[1][0] = 0; t2[1][1] = 1; t2[1][2] = 0;
 		t2[2][0] = s; t2[2][1] = 0; t2[2][2] = c;
 		for (j=0 ; j<3 ; j++)
 			for (k=0 ; k<3 ; k++)
 				t3[j][k] = t2[j][0]*t1[0][k] + t2[j][1]*t1[1][k] + t2[j][2]*t1[2][k];
-		a = e->angles[ROLL] * (M_PI/180.0f);
-		s = sinf (a); c = cosf (a);
+		PDR_SinCos (e->angles[ROLL], &s, &c);
 		t1[0][0] = 1; t1[0][1] = 0; t1[0][2] = 0;
 		t1[1][0] = 0; t1[1][1] = c; t1[1][2] = s;
 		t1[2][0] = 0; t1[2][1] = -s; t1[2][2] = c;
@@ -1323,53 +1394,79 @@ THE WALK
 */
 
 #define CLIP_FAR	16		/* subtree beyond r_maxdist: only sky faces */
+#define CLIP_NEAR	32		/* subtree within r_maxdist: no more distance tests */
 
 /* frustum test of a box: -1 = outside, else the planes the children still need */
 static int PDR_CullBox (const short *mm, int clip)
 {
+	// centre and half size: a plane's farthest corner is n.c + |n|.e, its nearest n.c - |n|.e
+	float	c0 = (float)(mm[0] + mm[3]) * 0.5f, c1 = (float)(mm[1] + mm[4]) * 0.5f, c2 = (float)(mm[2] + mm[5]) * 0.5f;
+	float	e0 = (float)(mm[3] - mm[0]) * 0.5f, e1 = (float)(mm[4] - mm[1]) * 0.5f, e2 = (float)(mm[5] - mm[2]) * 0.5f;
 	int		i;
 
 	for (i=0 ; i<4 ; i++)
 	{
-		const int	*ix;
-		const float	*pl;
-		float		d;
+		const float	*pl = pdr_frustum[i], *pa = pdr_frustum_abs[i];
+		float		d, r;
 
 		if (!(clip & (1 << i)))
 			continue;
-		ix = pdr_frustum_idx[i];
-		pl = pdr_frustum[i];
-		d = pl[0] * mm[ix[0]] + pl[1] * mm[ix[1]] + pl[2] * mm[ix[2]] + pl[3];
-		if (d <= 0)
+		d = pl[0] * c0 + pl[1] * c1 + pl[2] * c2 + pl[3];
+		r = pa[0] * e0 + pa[1] * e1 + pa[2] * e2;
+		if (d + r <= 0)
 			return -1;
-		d = pl[0] * mm[ix[3]] + pl[1] * mm[ix[4]] + pl[2] * mm[ix[5]] + pl[3];
-		if (d >= 0)
+		if (d - r >= 0)
 			clip &= ~(1 << i);
 	}
 	return clip;
 }
 
-static qboolean PDR_BoxBeyond (const short *mm)
+/* CLIP_FAR if the box lies beyond r_maxdist, CLIP_NEAR if it lies within it, else 0 */
+static int PDR_DistClass (const short *mm)
 {
-	float	d, dist2 = 0;
+	float	nearest = 0, farthest = 0;
 	int		j;
 
 	for (j=0 ; j<3 ; j++)
 	{
-		if (r_origin[j] < mm[j])
-			d = mm[j] - r_origin[j];
-		else if (r_origin[j] > mm[3+j])
-			d = r_origin[j] - mm[3+j];
-		else
-			continue;
-		dist2 += d * d;
+		float	a = mm[j] - r_origin[j], b = r_origin[j] - mm[3+j];
+		float	f = a < 0 ? -a : a, g = b < 0 ? -b : b;
+
+		if (a > 0)
+			nearest += a * a;
+		else if (b > 0)
+			nearest += b * b;
+		f = f > g ? f : g;
+		farthest += f * f;
 	}
-	return dist2 > pdr_maxdist2;
+	if (nearest > pdr_maxdist2)
+		return CLIP_FAR;
+	if (farthest <= pdr_maxdist2)
+		return CLIP_NEAR;
+	return 0;
 }
+
+static qboolean	pdr_walkonly;	/* (experiment 13: a second walk that draws nothing) */
 
 static void PDR_WorldFace (int fi, int clip)
 {
 	faceinfo_t	info;
+
+	if (clip & 15)
+	{
+		const float	*sp = pdr_world->spheres[fi];
+		int			i;
+
+		for (i=0 ; i<4 ; i++)
+		{
+			if ((clip & (1 << i)) &&
+				DotProduct (pdr_frustum[i], sp) + pdr_frustum[i][3] < -sp[3] * pdr_frustum_len[i])
+			{
+				PDR_CNT (pdr_c_andrej++);
+				return;		/* outside the view */
+			}
+		}
+	}
 
 	info.brush = pdr_world;
 	info.fi = fi;
@@ -1377,8 +1474,15 @@ static void PDR_WorldFace (int fi, int clip)
 	info.tb = &pdr_wbasis;
 	info.ent = NULL;
 	info.dface = -1;
+	if (pdr_walkonly || PDR_EXPERIMENT(18))		/* experiment 18: faces stop after the sphere test */
+		return;
 	PROF_BEGINF(P_FACE);
 	PDR_RasterFace (&info, (const float (*)[3])info.f->verts, info.f->numverts, clip & 15);
+	if (PDR_EXPERIMENT(14))		/* experiment 14: the same face again, its data now cached */
+	{
+		info.dface = -1;
+		PDR_RasterFace (&info, (const float (*)[3])info.f->verts, info.f->numverts, clip & 15);
+	}
 	PROF_ENDF(P_FACE);
 }
 
@@ -1396,7 +1500,7 @@ static void PDR_VisitLeaf (int leaf, int clip)
 		if (clip < 0)
 			return;
 	}
-	pdr_c_leafs++;
+	PDR_CNT (pdr_c_leafs++);
 	PROF_BEGINF(P_WMARK);
 
 	{
@@ -1417,7 +1521,7 @@ static void PDR_VisitLeaf (int leaf, int clip)
 	}
 
 	PROF_ENDF(P_WMARK);
-	if (BIT_TEST (pdr_leafhasfrag, leaf) && !(clip & CLIP_FAR))
+	if (BIT_TEST (pdr_leafhasfrag, leaf) && !(clip & CLIP_FAR) && !pdr_walkonly)
 		PDR_DrawLeafFragments (leaf);
 }
 
@@ -1436,8 +1540,8 @@ static void PDR_Walk (void)
 	int			sp = 0;
 	int			clip0 = 15;
 
-	if (pdr_maxdist2 > 0 && PDR_BoxBeyond (pdr_world->nodes[0].minmaxs))
-		clip0 |= CLIP_FAR;
+	if (pdr_maxdist2 > 0)
+		clip0 |= PDR_DistClass (pdr_world->nodes[0].minmaxs);
 	stack[sp].node = 0;
 	stack[sp].clip = clip0;
 	stack[sp].state = 0;
@@ -1471,9 +1575,9 @@ static void PDR_Walk (void)
 				if (clip < 0)
 					continue;
 			}
-			if (pdr_maxdist2 > 0 && !(clip & CLIP_FAR) && PDR_BoxBeyond (pn->minmaxs))
-				clip |= CLIP_FAR;
-			pdr_c_nodes++;
+			if (pdr_maxdist2 > 0 && !(clip & (CLIP_FAR | CLIP_NEAR)))
+				clip |= PDR_DistClass (pn->minmaxs);
+			PDR_CNT (pdr_c_nodes++);
 			dot = DotProduct (r_origin, pn->normal) - pn->dist;
 			side = dot < 0;
 			if (sp + 2 > WSTACK)
@@ -1593,6 +1697,16 @@ static void PDR_DrawWorldWith (uint32_t *cov)
 	memset (pdr_facevis, 0, pdr_facevis_bytes);
 	pdr_numdfaces = pdr_numdspans = 0;
 	PDR_Walk ();
+	if (PDR_EXPERIMENT(13))		/* experiment 13: walk again, the data now cached */
+	{
+		int	covered = pdr_covered;
+
+		pdr_walkonly = true;
+		pdr_covered = 0;		/* (no early end) */
+		PDR_Walk ();
+		pdr_walkonly = false;
+		pdr_covered = covered;
+	}
 	PDR_DrawFaces ();
 	PROF_BEGINF(P_OTHER);
 	if (pdr_covered < pdr_covtotal)
@@ -1616,5 +1730,8 @@ void PDR_DrawWorld (void)
 		PDR_DrawWorldWith (cov);
 	}
 	else
+	{
+		PROF_CNT(C_CTEXELS, 1);		/* (profiling: the coverage did not fit on the stack) */
 		PDR_DrawWorldWith (cov_static);
+	}
 }

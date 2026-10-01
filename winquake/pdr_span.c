@@ -199,7 +199,7 @@ static void SpanTurb (const pdr_spanctx_t *c, byte *dst, int y, int x0, int coun
 	float	sdivz, tdivz, zi, z, du = (float)x0, dv = (float)y;
 	float	sdivz16 = c->sdivzstepu * 16, tdivz16 = c->tdivzstepu * 16, zi16 = c->zistepu * 16;
 	int		s, t, snext, tnext, sstep, tstep, n;
-	const int	*turb = pdr_sintable + ((int)(cl.time*PDR_TURB_SPEED) & (PDR_TURB_CYCLE-1));
+	const int	*turb = pdr_sintable + pdr_turbofs;
 	const byte	*tex = c->tex;
 
 	sdivz = c->sdivzorigin + dv*c->sdivzstepv + du*c->sdivzstepu;

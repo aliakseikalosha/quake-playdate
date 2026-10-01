@@ -300,7 +300,7 @@ const byte *PDR_FaceLight (pdr_brush_t *b, int fi, const pdr_face_t *f, int *lco
 		pdr_lightptr[slot] = e->data;
 	}
 	BuildBlock (e, b, f, dynamic, slot);
-	pdr_c_lbuild++;
+	PDR_CNT (pdr_c_lbuild++);
 	return e->data;
 }
 

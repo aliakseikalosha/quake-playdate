@@ -394,7 +394,7 @@ static int shots_mode(const char *dir)
 #ifdef PD_NEW_RENDERER
 		extern int pdr_c_nodes, pdr_c_leafs, pdr_c_faces, pdr_c_drawn, pdr_c_occl, pdr_c_spans, pdr_c_pixels;
 		extern int pdr_c_lbuild, pdr_c_aliasmodels, pdr_c_atris, pdr_c_averts;
-		double acc[11] = {0};
+		double acc[11] = {0}, acc2[6] = {0};
 		int nacc = 0;
 #endif
 
@@ -417,6 +417,12 @@ static int shots_mode(const char *dir)
 				acc[k++] += pdr_c_nodes; acc[k++] += pdr_c_leafs; acc[k++] += pdr_c_faces; acc[k++] += pdr_c_drawn;
 				acc[k++] += pdr_c_occl; acc[k++] += pdr_c_spans; acc[k++] += pdr_c_pixels; acc[k++] += pdr_c_lbuild;
 				acc[k++] += pdr_c_aliasmodels; acc[k++] += pdr_c_atris; acc[k++] += pdr_c_averts;
+				{
+					extern int pdr_c_calls, pdr_c_andrej, pdr_c_cliprej, pdr_c_norows, pdr_c_rows, pdr_c_verts;
+					acc2[0] += pdr_c_calls; acc2[1] += pdr_c_andrej; acc2[2] += pdr_c_cliprej; acc2[3] += pdr_c_norows;
+					acc2[4] += pdr_c_rows; acc2[5] += pdr_c_verts;
+					pdr_c_calls = pdr_c_andrej = pdr_c_cliprej = pdr_c_norows = pdr_c_rows = pdr_c_verts = 0;
+				}
 				nacc++;
 			}
 #endif
@@ -434,6 +440,9 @@ static int shots_mode(const char *dir)
 				   "lightbuilds %.1f amodels %.1f atris %.0f averts %.0f\n", d, acc[0] / nacc, acc[1] / nacc, acc[2] / nacc,
 				   acc[3] / nacc, acc[4] / nacc, acc[5] / nacc, acc[6] / nacc, acc[7] / nacc, acc[8] / nacc, acc[9] / nacc,
 				   acc[10] / nacc);
+		if (nacc)
+			printf("   raster: calls %.0f (verts %.0f) all-outside %.0f clipped-away %.0f no-rows %.0f rows %.0f\n",
+				   acc2[0] / nacc, acc2[5] / nacc, acc2[1] / nacc, acc2[2] / nacc, acc2[3] / nacc, acc2[4] / nacc);
 #endif
 	}
 	printf("shots: %d pictures in %s\n", total, dir);

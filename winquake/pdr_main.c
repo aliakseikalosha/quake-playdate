@@ -61,6 +61,13 @@ float	pdr_scale_for_mip;
 float	pdr_maxdist2;
 qboolean	pdr_fullbright;
 float	pdr_frustum[4][4];
+float	pdr_frustum_len[4];
+float	pdr_frustum_abs[4][3];
+float	pdr_time;
+int		pdr_time10;
+int		pdr_turbofs;
+int		pdr_numdlights;
+int		pdr_dlightidx[MAX_DLIGHTS];
 int		pdr_frustum_idx[4][6];
 short	pdr_zx0[PDR_MAXH], pdr_zx1[PDR_MAXH];
 qboolean	pdr_zany;
@@ -75,6 +82,44 @@ static model_t	*interlace_world;
 extern particle_t	*active_particles;
 qboolean PDR_LeafVisible (int leafnum);
 void PDR_MarkLeavesNow (void);
+
+void PDR_SinCos (float deg, float *s, float *c)
+{
+	// to a quarter turn k and a remainder in [-45, 45] degrees
+	float	q = deg * (1.0f / 90.0f);
+	int		k = (int)(q >= 0 ? q + 0.5f : q - 0.5f);
+	float	r = (deg - 90.0f * k) * (M_PI / 180.0f);
+	float	r2 = r * r;
+	float	sr = r * (1.0f - r2 * (1.0f/6 - r2 * (1.0f/120 - r2 * (1.0f/5040))));
+	float	cr = 1.0f - r2 * (0.5f - r2 * (1.0f/24 - r2 * (1.0f/720 - r2 * (1.0f/40320))));
+
+	switch (k & 3)
+	{
+	case 0: *s = sr; *c = cr; break;
+	case 1: *s = cr; *c = -sr; break;
+	case 2: *s = -sr; *c = -cr; break;
+	default: *s = -cr; *c = sr; break;
+	}
+}
+
+/* AngleVectors (mathlib.c) with PDR_SinCos */
+void PDR_AngleVectors (const vec3_t angles, vec3_t forward, vec3_t right, vec3_t up)
+{
+	float	sr, sp, sy, cr, cp, cy;
+
+	PDR_SinCos (angles[YAW], &sy, &cy);
+	PDR_SinCos (angles[PITCH], &sp, &cp);
+	PDR_SinCos (angles[ROLL], &sr, &cr);
+	forward[0] = cp*cy;
+	forward[1] = cp*sy;
+	forward[2] = -sp;
+	right[0] = (-1*sr*sp*cy+-1*cr*-sy);
+	right[1] = (-1*sr*sp*sy+-1*cr*cy);
+	right[2] = -1*sr*cp;
+	up[0] = (cr*sp*cy+-sr*-sy);
+	up[1] = (cr*sp*sy+-sr*cy);
+	up[2] = cr*cp;
+}
 
 void PDR_TransformToView (const pdr_basis_t *b, const float *in, float *out)
 {
@@ -320,6 +365,9 @@ static void PDR_SetupFrustum (void)
 			pdr_frustum_idx[i][3+j] = n[i][j] >= 0 ? j : 3 + j;
 		}
 		pdr_frustum[i][3] = -DotProduct (n[i], r_origin);
+		pdr_frustum_len[i] = sqrtf (DotProduct (n[i], n[i]));
+		for (j=0 ; j<3 ; j++)
+			pdr_frustum_abs[i][j] = n[i][j] < 0 ? -n[i][j] : n[i][j];
 	}
 }
 
@@ -341,6 +389,14 @@ static void PDR_SetupFrame (void)
 
 	PDR_AnimateLights ();
 	r_framecount++;
+
+	pdr_time = (float)cl.time;
+	pdr_time10 = (int)(cl.time*10);
+	pdr_turbofs = (int)(cl.time*PDR_TURB_SPEED) & (PDR_TURB_CYCLE-1);
+	pdr_numdlights = 0;
+	for (i=0 ; i<MAX_DLIGHTS ; i++)
+		if (cl_dlights[i].die >= cl.time)
+			pdr_dlightidx[pdr_numdlights++] = i;
 
 	pdr_maxdist2 = r_maxdist2 = r_maxdist.value > 0 ? r_maxdist.value * r_maxdist.value : 0;
 
@@ -553,6 +609,7 @@ static void PDR_SetupEntities (void)
 	}
 	pdr_zany = false;
 	pdr_numaliasents = pdr_numspriteents = 0;
+	PDR_ResetAliasSetups ();
 	PDR_ClearBmodels ();
 
 	if (r_drawentities.value)
@@ -598,7 +655,7 @@ static void PDR_SetupEntities (void)
 			case mod_alias:
 				if (e == &cl_entities[cl.viewentity])
 					break;	// don't draw the player
-				if (PDR_EntityBeyond (e))
+				if (PDR_EntityBeyond (e) || PDR_AliasCulled (e))
 					break;
 				if (pdr_numaliasents < MAX_DRAWENTS && PDR_AliasRect (e, rect))
 				{
@@ -647,11 +704,40 @@ static void PDR_SetupEntities (void)
 
 	if (active_particles)
 	{
-		rect[0] = pdr_vx;
-		rect[1] = pdr_vy;
-		rect[2] = pdr_vx + pdr_vw;
-		rect[3] = pdr_vy + pdr_vh;
-		PDR_AddZRect (rect);
+		if (PDR_EXPERIMENT(16))		/* experiment 16: z only where particles land */
+		{
+			extern vec3_t	r_pright, r_pup, r_ppn;
+			particle_t		*p;
+			int				n = 0;
+
+			for (p=active_particles ; p ; p=p->next, n++)
+			{
+				vec3_t	local;
+				float	z, zi;
+				int		u, v;
+
+				VectorSubtract (p->org, r_origin, local);
+				z = DotProduct (local, vpn);
+				if (z < PARTICLE_Z_CLIP)
+					continue;
+				zi = 1.0f / z;
+				u = (int)(pdr_xcenter + zi * xscaleshrink * DotProduct (local, vright) + 0.5f);
+				v = (int)(pdr_ycenter - zi * yscaleshrink * DotProduct (local, vup) + 0.5f);
+				rect[0] = u;
+				rect[1] = v;
+				rect[2] = u + 4;		/* (particles are at most 4 pixels here) */
+				rect[3] = v + 4;
+				PDR_AddZRect (rect);
+			}
+		}
+		else
+		{
+			rect[0] = pdr_vx;
+			rect[1] = pdr_vy;
+			rect[2] = pdr_vx + pdr_vw;
+			rect[3] = pdr_vy + pdr_vh;
+			PDR_AddZRect (rect);
+		}
 	}
 }
 
@@ -707,7 +793,7 @@ static void PDR_WarpScreen (void)
 	for (u=0 ; u<src_w+PDR_TURB_AMP2*2 ; u++)
 		column[u] = r_refdef.vrect.x + (int)((float)u * wratio * w / (w + PDR_TURB_AMP2 * 2));
 
-	turb = pdr_intsintable + ((int)(cl.time*PDR_TURB_SPEED)&(PDR_TURB_CYCLE-1));
+	turb = pdr_intsintable + pdr_turbofs;
 	dest = vid.buffer + scr_vrect.y * vid.rowbytes + scr_vrect.x;
 	for (v=0 ; v<src_h ; v++, dest += vid.rowbytes)
 	{
