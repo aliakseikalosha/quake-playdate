@@ -59,6 +59,8 @@ Every build gets the next build number: after `pdc`, `port/boards/playdate/pdx_b
 
 Performance knobs (device build, pass to `cmake`):
 
+- `-DPD_NEW_RENDERER=ON` (default) draws the 3D view with the renderer written for the Playdate (`winquake/pdr_*.c`, see [Renderer](#renderer)); `OFF` builds Quake's original software refresh (`r_*.c`, `d_*.c`). The `PD_FAST_*`, `PD_ASM` and `PD_STACK` options below only apply to the original renderer.
+
 - `-DPD_REFRESH_RATE=30` frames per second the system asks for (max 50, `0` = as fast as possible). Raise it if lighter scenes have headroom.
 - `-DPD_OPT=-O3` optimisation level. Measured on a device: `-O2` is the same as `-O3` and `-Os` is no faster, so there is little to gain here; compare with "Show FPS" in the system menu.
 - `-DPD_FAST_EDGES=ON` (default) array-based edge scan, about 6 ms per frame faster in the demos with identical output; it also keeps each surface's span list head on the stack while scanning. `OFF` uses the original linked-list version.
@@ -68,6 +70,42 @@ Performance knobs (device build, pass to `cmake`):
 - `-DPD_ASM=ON` (default, device build only) hand-written Thumb-2 assembly for the Cortex-M7 in the hottest CPU-bound loops, each with its C twin kept as the reference: the textured span drawer (`winquake/d_scan_arm.S`) and the edge scan's per-line span generation and active edge table upkeep (`winquake/r_edge_arm.S`). 4-5 ms per frame faster in the demos (demo1 -3.9 ms, demo2 -4.7, demo3 -5.2; 7-9%) with identical output; `OFF` uses the C.
 - `-DPD_STACK=ON` (default) puts scratch data on the fast stack instead of in slow static memory, where writing it and reading it back cost ~26 ns per byte plus a miss per line: the per-surface span drawing parameters (gradients, texture adjustments; they used to be a dozen globals written for every surface), a surface cache build's lightmap, an alias model's projected vertices (models up to ~180 vertices: weapons, ogres, zombies, soldiers; not players or dogs) and the alias clipper's scratch polygon. A buffer only goes on the stack while the call chain stays within 6.5 KB of the frame start (`winquake/pd_stack.h`), and the edge scan now returns before the surfaces are drawn so the ~3 KB of scan arrays are off the stack by then. 2.6-3.6 ms per frame faster in the demos (5-7%) with identical output; `OFF` uses the static buffers.
 - `-DPD_LOWRES_3D=ON` (default) renders the 3D view at half resolution; the display layer dithers it straight from the half-resolution buffer and only expands the rows that the console, menu or HUD text draw over.
+
+## Renderer
+
+The default renderer (`PD_NEW_RENDERER`, `winquake/pdr_*.c`) is a rewrite of Quake's 3D drawing for the Playdate's memory system (a small write-through cache in front of slow memory, a fast but tiny stack; see [Profiling on the device](#profiling-on-the-device)). It draws the same things as the original renderer (world, sky, water, brush entities, alias models, sprites, particles, dynamic lights, light styles, underwater warp, interlacing, draw distance) and uses the same cvars and Options menu settings, but works differently:
+
+- **No edge list or span sorting.** The BSP tree is walked front to back, and every face is rasterized straight into the rows it covers, clipped against a per-row bit mask of the pixels already drawn (kept on the stack). A face that has no uncovered pixels costs only its row walk, and the walk stops as soon as the whole view is covered.
+- **Compact map data.** At map load the nodes, leaves and faces are copied into small arrays laid out in walk order: 32-byte nodes, faces with their vertices inline, front-facing faces first. Each face also gets a bounding sphere and its texture set-up.
+- **No surface cache.** Faces are textured directly from the mip texture and colormap, with lighting from a small 8-bit light block per face (lightmap resolution, from a 128 KB pool), sampled bilinearly every 8 pixels. Dynamic lights and light-style changes only rebuild those blocks (a few hundred bytes each) instead of whole texture-sized surfaces.
+- **Two passes.** The walk only records the spans each face gets, and the faces are then drawn one after another, so each face's texture, light block and set-up stay in the cache while its spans are drawn.
+- **Z only where it is read.** The z buffer is written only in the screen rectangles of the alias models, sprites and the weapon that this frame draws (the whole view when particles are visible).
+- **Brush entities** (doors, platforms) are clipped into the world leaves they touch and drawn as part of the walk, so they need no separate sorting pass.
+- **Alias models** use compact per-model triangle and texture coordinate lists, a stack buffer of projected vertices and their own triangle rasterizer.
+- Floating point is single precision throughout, with a polynomial `sin`/`cos` and no `double` anywhere in the frame.
+
+The picture is not bit-identical to the original: lighting is interpolated over 8-pixel runs rather than taken from a 16x16 surface cache, edges are rounded differently, and small alias models (torch flames, distant monsters) come out a pixel thinner, because the original draws them by recursive subdivision, which includes every edge pixel. Over every 25th frame of the three demos, 0.3% of the 3D view's pixels differ by more than a tenth of the brightness range (`tools/hostcheck/compare-shots.py`); most of that is texel rounding on close high-contrast walls and the random spread of particles. It takes ~150-250 KB more memory per map than the original's surface cache.
+
+Measured on the device, playing the demos as timedemos (ms per frame of game work; *3D* is the renderer's sections: setup, world, brush entities, edge scan, entities, weapon view and particles):
+
+| Interlaced on (the default settings) | original | new | change |
+|---|---|---|---|
+| demo1 total | 36.8 | 28.2 | -23.5% |
+| demo1 3D | 27.2 | 18.2 | -33% |
+| demo2 total | 36.1 | 29.1 | -19.2% |
+| demo2 3D | 24.8 | 17.3 | -30% |
+| demo3 total | 41.2 | 31.2 | -24.3% |
+| demo3 3D | 31.1 | 21.5 | -31% |
+
+| Interlaced off | original | new | change |
+|---|---|---|---|
+| demo1 total | 42.0 | 34.0 | -19.0% |
+| demo2 total | 40.8 | 34.9 | -14.6% |
+| demo3 total | 46.6 | 37.6 | -19.3% |
+
+With the default settings (texture detail low, interlaced on, draw distance 512), demo1 runs at 27.9 fps instead of 24.2, demo2 at 27.8 instead of 24.7 and demo3 at 27.2 instead of 22.2. The original renderer already had all of the `PD_FAST_*`, `PD_ASM` and `PD_STACK` optimisations in these runs. The rest of the frame (client, HUD, display) is shared code and is unchanged, which is why the totals improve less than the 3D part. The ms figures in [Settings](#settings) were measured with the original renderer.
+
+Renderer experiments: `-DPD_PDR_EXP=n` (with `PD_PROFILE`) runs the code under `if (PDR_EXPERIMENT(n))` (`winquake/pdr.h`) on half of the frames, and `scripts/pd-report.py --ab` compares the two halves, as with `PD_ASM_AB`.
 
 ## Settings
 
@@ -127,6 +165,15 @@ What the measurements showed about this hardware (useful when optimising):
 ## Checking that an optimisation does not change the picture
 
 `tools/hostcheck` runs the real engine and `display.c` on the host. `tools/hostcheck/run.sh` checks the low-res upscale invariants over scripted scenes (walking, console, menus, HUD, view sizes, demos); `HGOLD=file tools/hostcheck/run.sh` writes a hash of every LCD frame of the three demos plus a hash of the 8-bit render buffer and z buffer (`NO_FAST_ALIAS=1` / `NO_FAST_FACES=1` / `NO_FAST_SURFACES=1` build the original code paths, `EXTRA_DEFS="-DFOO=1"` adds compiler flags), and `tools/hostcheck/golden-compare.py a b` compares two such files (build a reference checkout with `TREE=/path OUT=ref NO_LAZY_CHECK=1` if it predates the lazy upscale). Needs clang and the Playdate SDK headers.
+
+`NEW=1` builds either harness with the new renderer (`NEW=1 tools/hostcheck/run.sh` checks the upscale invariants with it, `HMAPS=1` loads every shareware map and turns, walks and fires in each, as a crash and limits check). `HSHOTS=<dir>` plays the three demos and writes every 25th frame's 3D view (`dD_NNNN.ppm`) and LCD picture; `tools/hostcheck/compare-shots.py <old dir> <new dir> [<out dir>]` prints how many pixels differ and writes side-by-side PNGs. For example, to compare the two renderers (after one `tools/hostcheck/run.sh`, which sets up the run directory):
+
+```shell
+tools/hostcheck/build.sh && NEW=1 OUT=hnew tools/hostcheck/build.sh
+mkdir -p /tmp/old /tmp/new && cd tools/hostcheck/out/run
+HSHOTS=/tmp/old ../hostcheck && HSHOTS=/tmp/new ../hnew && cd -
+tools/hostcheck/compare-shots.py /tmp/old /tmp/new /tmp/sbs
+```
 
 `HFRAMES=<prefix> tools/hostcheck/run.sh` plays a demo back in real time and writes what the LCD shows as `<prefix>-NNNN.pbm` pictures (`HDEMO` picks the demo, `HSKIP` the frames to skip, `HEVERY` the frames between pictures, default 2 = 15 per second, `HCOUNT` how many). `docs/demo.gif` was made from them:
 
