@@ -274,6 +274,28 @@ void PDR_BuildBrushes (void)
 			PDR_BrushForModel (m);
 	}
 
+	// the light styles in use: only these are animated every frame (PDR_AnimateLights)
+	{
+		extern byte	pdr_usedstyles[MAX_LIGHTSTYLES];
+		extern int	pdr_numusedstyles;
+		byte		used[256];
+		int			b, f, m;
+
+		memset (used, 0, sizeof(used));
+		for (b=0 ; b<pdr_numbrushes ; b++)
+			for (f=0 ; f<pdr_brushes[b].numfaces ; f++)
+			{
+				const pdr_face_t	*pf = PDR_FACE (&pdr_brushes[b], f);
+
+				for (m=0 ; m<MAXLIGHTMAPS && pf->styles[m] != 255 ; m++)
+					used[pf->styles[m]] = 1;
+			}
+		pdr_numusedstyles = 0;
+		for (m=0 ; m<MAX_LIGHTSTYLES ; m++)
+			if (used[m])
+				pdr_usedstyles[pdr_numusedstyles++] = m;
+	}
+
 	pdr_dlframe = Hunk_AllocName (pdr_totalfaces * sizeof(int), "pdr");
 	pdr_dlbits = Hunk_AllocName (pdr_totalfaces * sizeof(unsigned), "pdr");
 	pdr_lightptr = Hunk_AllocName (pdr_totalfaces * sizeof(byte *), "pdr");
@@ -1077,6 +1099,13 @@ static void PDR_ClipFragment (int bent, int face, const float (*v0)[3], int n0, 
 
 	if (n0 > PDR_MAXCLIPVERTS)
 		return;
+	if (startnode < 0)
+	{
+		// the entity lies in one leaf: nothing to split
+		if (!pdr_leafsolid[~startnode] && BIT_TEST (pdr_leafvis, ~startnode))
+			PDR_StoreFragment (~startnode, bent, face, v0, n0);
+		return;
+	}
 	memcpy (clipwork_v[0], v0, n0 * 12);
 	clipwork_items[0].node = startnode;
 	clipwork_items[0].first = 0;
@@ -1578,6 +1607,7 @@ static void PDR_Walk (void)
 			if (pdr_maxdist2 > 0 && !(clip & (CLIP_FAR | CLIP_NEAR)))
 				clip |= PDR_DistClass (pn->minmaxs);
 			PDR_CNT (pdr_c_nodes++);
+			PDR_CNT (pdr_c_cliprej += (clip & CLIP_FAR) != 0);	/* (host statistics: far nodes) */
 			dot = DotProduct (r_origin, pn->normal) - pn->dist;
 			side = dot < 0;
 			if (sp + 2 > WSTACK)

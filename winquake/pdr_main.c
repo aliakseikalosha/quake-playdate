@@ -197,6 +197,12 @@ void R_NewMap (void)
 
 	r_viewleaf = NULL;
 	R_ClearParticles ();
+	{
+		int	j;
+
+		for (j=0 ; j<MAX_LIGHTSTYLES ; j++)
+			pdr_lightstyle[j] = 256;	/* (styles no face uses stay at normal light) */
+	}
 	PDR_NewMapWorld ();
 	PDR_NewMapLight ();
 	PDR_NewMapAlias ();

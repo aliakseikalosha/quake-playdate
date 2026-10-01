@@ -449,6 +449,30 @@ static int shots_mode(const char *dir)
 	return 0;
 }
 
+/* HMAPS=1: every map of the pak, turning and walking for a while in each (crash and limit checks) */
+static int maps_mode(void)
+{
+	static const char *const maps[] = {"start", "e1m1", "e1m2", "e1m3", "e1m4", "e1m5", "e1m6", "e1m7", "e1m8"};
+	int i;
+	char c[64];
+
+	for (i = 0; i < (int)(sizeof(maps) / sizeof(maps[0])); i++) {
+		snprintf(c, sizeof(c), "map %s\n", maps[i]);
+		cmd(c);
+		run(40);
+		cmd("+left\n");
+		run(120);
+		cmd("-left\n+forward\n+right\n");
+		run(200);
+		cmd("-forward\n-right\nimpulse 9\n+attack\n");
+		run(60);
+		cmd("-attack\n");
+		run(10);
+		printf("map %s: ok (frame %ld)\n", maps[i], frame_no);
+	}
+	return 0;
+}
+
 static int menu_test(void)
 {
 	char path[256];
@@ -642,6 +666,8 @@ int main(int argc, char **argv)
 		return frames_mode(getenv("HFRAMES"));
 	if (getenv("HSHOTS"))
 		return shots_mode(getenv("HSHOTS"));
+	if (getenv("HMAPS"))
+		return maps_mode();
 	if (getenv("HMENU"))
 		return menu_test();
 

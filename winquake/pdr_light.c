@@ -24,14 +24,19 @@ LIGHT STYLES
 ==============================================================================
 */
 
+/* the light styles some face of the level uses (set at map load); only those are animated */
+byte	pdr_usedstyles[MAX_LIGHTSTYLES];
+int		pdr_numusedstyles;
+
 void PDR_AnimateLights (void)
 {
-	int		i, j, k;
+	int		i, j, k, u;
 
 // 'm' is normal light, 'a' is no light, 'z' is double bright
 	i = (int)(cl.time*10);
-	for (j=0 ; j<MAX_LIGHTSTYLES ; j++)
+	for (u=0 ; u<pdr_numusedstyles ; u++)
 	{
+		j = pdr_usedstyles[u];
 		if (!cl_lightstyle[j].length)
 		{
 			pdr_lightstyle[j] = 256;
@@ -381,11 +386,12 @@ void PDR_MarkBmodelLights (pdr_brush_t *b, int headnode)
 	int		k;
 
 	pdr_dlightframe = r_framecount;
-	for (k=0 ; k<MAX_DLIGHTS ; k++)
+	for (k=0 ; k<pdr_numdlights ; k++)
 	{
-		if (cl_dlights[k].die < cl.time || !cl_dlights[k].radius)
-			continue;
-		MarkLights (&cl_dlights[k], 1u << k, b, headnode);
+		int	l = pdr_dlightidx[k];
+
+		if (cl_dlights[l].radius)
+			MarkLights (&cl_dlights[l], 1u << l, b, headnode);
 	}
 }
 
