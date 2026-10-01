@@ -557,7 +557,9 @@ static void PDR_SetupEntities (void)
 
 	if (r_drawentities.value)
 	{
+		PROF_BEGINF(P_SEREM);
 		PDR_StoreStatics ();
+		PROF_ENDF(P_SEREM);
 		for (i=0 ; i<cl_numvisedicts ; i++)
 		{
 			entity_t	*e = cl_visedicts[i];
@@ -742,8 +744,12 @@ void R_RenderView (void)
 
 	PROF_BEGIN(P_SETUP);
 	PDR_SetupFrame ();
+	PROF_BEGINF(P_SEINS);
 	PDR_MarkLeavesNow ();
+	PROF_ENDF(P_SEINS);
+	PROF_BEGINF(P_SEGEN);
 	PDR_SetupEntities ();
+	PROF_ENDF(P_SEGEN);
 	PROF_END(P_SETUP);
 
 	PROF_BEGIN(P_BENT);

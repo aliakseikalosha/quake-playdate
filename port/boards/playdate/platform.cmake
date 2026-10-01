@@ -77,6 +77,10 @@ endif()
 option(PD_STACK "Put scratch buffers on the stack when there is room" ON)
 option(PD_STACK_AB "With PD_PROFILE and PD_STACK: stack buffers on half of the frames, static ones on the others" OFF)
 
+# With PD_PROFILE and PD_NEW_RENDERER: an experiment (winquake/pdr.h, PDR_EXP) on half of the frames,
+# picked by a hash of the frame number; compare with scripts/pd-report.py --ab
+set(PD_PDR_EXP 0 CACHE STRING "With PD_PROFILE and PD_NEW_RENDERER: renderer experiment for A/B runs (0 = none)")
+
 option(PD_PROFILE "Build the on-device profiler" OFF)
 option(PD_PROFILE_FINE "With PD_PROFILE: also time world faces, edge scan parts, surface builds, server and QuakeC builtins (adds ~2 ms/frame of timer overhead)" OFF)
 option(PD_BENCH "With PD_PROFILE: run the demos as timedemos" OFF)
@@ -87,6 +91,8 @@ set(PD_BENCH_FIRST 1 CACHE STRING "With PD_BENCH: the demo to start with (1-3)")
 add_compile_definitions(
 	QEMBD_PLAYDATE=1
 	$<$<BOOL:${PD_NEW_RENDERER}>:PD_NEW_RENDERER=1>
+	$<$<AND:$<BOOL:${PD_NEW_RENDERER}>,$<BOOL:${PD_PROFILE}>,$<BOOL:${PD_PDR_EXP}>>:PD_PDR_AB=1>
+	$<$<AND:$<BOOL:${PD_NEW_RENDERER}>,$<BOOL:${PD_PROFILE}>,$<BOOL:${PD_PDR_EXP}>>:PDR_EXP=${PD_PDR_EXP}>
 	$<$<BOOL:${PD_FAST_EDGES}>:PD_FAST_EDGES=1>
 	$<$<BOOL:${PD_FAST_ALIAS}>:PD_FAST_ALIAS=1>
 	$<$<BOOL:${PD_FAST_FACES}>:PD_FAST_FACES=1>

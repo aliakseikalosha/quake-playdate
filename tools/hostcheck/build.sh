@@ -29,7 +29,7 @@ grep -q "PD_FAST_EDGES" "$TREE/winquake/r_edge.c" 2>/dev/null && DEFS+=(-DPD_FAS
 [ -n "$NO_LAZY_CHECK" ] && DEFS+=(-DNO_LAZY_CHECK=1)
 [ -n "$EXTRA_DEFS" ] && DEFS+=($EXTRA_DEFS)
 INC=(-I"$TREE/include" -I"$TREE/winquake" -I"$TREE/port/boards/playdate" -I"$SDK/C_API" -I"$HERE")
-CFLAGS=(-O1 -g -w -fno-common -fcommon "${DEFS[@]}" "${INC[@]}")
+CFLAGS=(${OPT:--O1} -g -w -fno-common -fcommon "${DEFS[@]}" "${INC[@]}")
 
 WQ="chase cmd common console crc cvar draw host host_cmd keys mathlib menu model nonintel screen sbar zone view wad world
     cl_demo cl_input cl_main cl_parse cl_tent net_loop net_main pr_cmds pr_edict pr_exec r_efrag r_part
@@ -37,7 +37,7 @@ WQ="chase cmd common console crc cvar draw host host_cmd keys mathlib menu model
 if [ -n "$NEW" ]; then
   WQ="$WQ pdr_main pdr_world pdr_span pdr_light pdr_alias pdr_sprite pdr_lowres"
   DEFS+=(-DPD_NEW_RENDERER=1)
-  CFLAGS=(-O1 -g -w -fno-common -fcommon "${DEFS[@]}" "${INC[@]}")
+  CFLAGS=(${OPT:--O1} -g -w -fno-common -fcommon "${DEFS[@]}" "${INC[@]}")
 else
   WQ="$WQ d_edge d_fill d_init d_modech d_part d_polyse d_scan d_sky d_sprite d_surf d_vars d_zpoint
     r_aclip r_alias r_bsp r_light r_draw r_edge r_misc r_main r_sky r_sprite r_surf r_vars"

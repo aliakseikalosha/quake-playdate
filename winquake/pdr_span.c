@@ -38,6 +38,8 @@ static inline int SampleLight (const pdr_spanctx_t *c, int s, int t)
 
 	if (!c->light)
 		return c->lconst;
+	if (PDR_EXPERIMENT(7))		/* experiment 7: no light block sampling */
+		return 32 << 18;
 	ls = s >> c->lshift;
 	lt = t >> c->lshift;
 	if (ls > c->lmaxs)
@@ -168,7 +170,22 @@ static void SpanLit (const pdr_spanctx_t *c, byte *dst, int y, int x0, int count
 			}
 		}
 
-		if (c->tshift >= 0)
+		if (PDR_EXPERIMENT(1))		/* experiment 1: texture without the colormap */
+		{
+			int	i, ss = s + c->soff, tt = t + c->toff;
+
+			for (i=0 ; i<n ; i++, ss += sstep, tt += tstep)
+				dst[i] = c->tex[c->tshift >= 0 ? ((tt >> c->tshift) & c->tmask) + ((ss >> 16) & c->smask) : 0];
+		}
+		else if (PDR_EXPERIMENT(4) || PDR_EXPERIMENT(5))	/* 4: 16 light levels; 5: one colormap row */
+		{
+			int	i, ss = s + c->soff, tt = t + c->toff, ll = l, mask = PDR_EXPERIMENT(4) ? 0x3c00 : 0;
+			const byte	*cm = c->colormap + (PDR_EXPERIMENT(5) ? 32 * 256 : 0);
+
+			for (i=0 ; i<n ; i++, ss += sstep, tt += tstep, ll += lstep)
+				dst[i] = cm[((ll >> 10) & mask) + c->tex[c->tshift >= 0 ? ((tt >> c->tshift) & c->tmask) + ((ss >> 16) & c->smask) : 0]];
+		}
+		else if (c->tshift >= 0)
 			SpanLitPow2 (dst, c->tex, c->colormap, s + c->soff, t + c->toff, l, sstep, tstep, lstep, n,
 						 c->tshift, c->smask, c->tmask);
 		else
@@ -372,6 +389,14 @@ ENTRY POINTS
 void PDR_DrawSpan (const pdr_spanctx_t *c, int y, int x0, int x1)
 {
 	byte	*dst = pdr_vbuf + y * pdr_stride + x0;
+
+	if (PDR_EXPERIMENT(2))
+	{
+		memset (dst, 15, x1 - x0);	/* experiment 2: no texturing at all */
+		return;
+	}
+	if (PDR_EXPERIMENT(3))
+		return;						/* experiment 3: no pixels */
 
 	switch (c->kind)
 	{

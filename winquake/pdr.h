@@ -143,6 +143,14 @@ extern float	pdr_scale_for_mip;
 extern float	pdr_maxdist2;
 extern qboolean	pdr_fullbright;
 
+/* PD_PDR_AB (profiling): experiment PDR_EXP runs on the frames where pd_asm_on is 0 */
+#ifdef PD_PDR_AB
+extern int	pd_asm_on;
+#define PDR_EXPERIMENT(n)	(PDR_EXP == (n) && !pd_asm_on)
+#else
+#define PDR_EXPERIMENT(n)	0
+#endif
+
 #define PDR_ROW_SKIPPED(y)	(((y) & 1) == pdr_skip)
 
 /* world-space frustum planes for box culling (unnormalised; inside >= 0) */

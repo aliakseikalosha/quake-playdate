@@ -41,9 +41,21 @@ static const signed char parent_of[P_NSECT] = {
 	[P_SETUP] = P_SCR, [P_WORLD] = P_SCR, [P_BENT] = P_SCR, [P_SCAN] = P_SCR, [P_ENT] = P_SCR,
 	[P_VIEW] = P_SCR, [P_PART] = P_SCR, [P_UPSCALE] = P_SCR, [P_HUD] = P_SCR, [P_VID] = P_SCR,
 	[P_PAL] = P_SCR,
+#ifndef PD_NEW_RENDERER
 	[P_DSURF] = P_SCAN, [P_SEINS] = P_SCAN, [P_SEGEN] = P_SCAN, [P_SEREM] = P_SCAN, [P_SESTEP] = P_SCAN,
 	[P_CACHE] = P_DSURF, [P_SPANS] = P_DSURF, [P_ZSPAN] = P_DSURF, [P_OTHER] = P_DSURF, [P_GRAD] = P_DSURF,
+#else
+	[P_DSURF] = P_SCAN, [P_SESTEP] = P_SCAN, [P_ZSPAN] = P_DSURF,
+#endif
+#ifdef PD_NEW_RENDERER
+	/* winquake/pdr_world.c: wmark = leaves, wsurfs = node faces, face = transform/clip/edges,
+	   spans = coverage and drawing, grad = span setup, cache = light blocks, other = background;
+	   pdr_main.c: se_ins = PVS, se_gen = entity boxes, se_rem = static entities */
+	[P_FACE] = P_WSURFS, [P_SPANS] = P_WSURFS, [P_GRAD] = P_SPANS, [P_CACHE] = P_SPANS, [P_OTHER] = P_WORLD,
+	[P_SEINS] = P_SETUP, [P_SEGEN] = P_SETUP, [P_SEREM] = P_SETUP,
+#else
 	[P_FACE] = P_WSURFS,
+#endif
 	[P_SCALLOC] = P_CACHE, [P_LIGHT] = P_CACHE, [P_BLOCKS] = P_CACHE,
 	[P_SVRUN] = P_SERVER, [P_SVPHYS] = P_SERVER, [P_SVSEND] = P_SERVER, [P_QC] = P_SERVER,
 	[P_ALIAS] = P_ENT, [P_ATRANS] = P_ALIAS, [P_APOLY] = P_ALIAS, [P_LPT] = P_ENT, [P_ABBOX] = P_ENT, [P_WMARK] = P_WORLD, [P_WEFRAG] = P_WORLD, [P_WSURFS] = P_WORLD,
@@ -53,7 +65,7 @@ static const char *const cnt_names[C_NCNT] = {"n_spans", "n_pixels", "n_cbuild",
 
 static SDFile *pf;
 
-#if defined(PD_ASM_AB) || defined(PD_ASM_CHECK) || defined(PD_STACK_AB)
+#if defined(PD_ASM_AB) || defined(PD_ASM_CHECK) || defined(PD_STACK_AB) || defined(PD_PDR_AB)
 /* see winquake/pd_asm.h and winquake/pd_stack.h */
 int pd_asm_on = 1;
 unsigned pd_asm_bad;
@@ -743,6 +755,46 @@ static void micro_stack(void)
 }
 
 
+/* Instruction cache: straight-line blocks of 16-bit adds (2 bytes each), called over and over.
+ * While a block fits in the I-cache a call costs ~1 cycle per add; past it every 32-byte line
+ * is fetched from slow memory again. */
+#define ICODE(name, kb) \
+	static __attribute__((noinline, aligned(32))) uint32_t name(uint32_t x) \
+	{ \
+		__asm__ volatile(".rept " #kb " * 512\n adds %0, %0, #1\n .endr" : "+l"(x)); \
+		return x; \
+	}
+ICODE(icode2, 2)
+ICODE(icode4, 4)
+ICODE(icode8, 8)
+ICODE(icode12, 12)
+ICODE(icode16, 16)
+ICODE(icode24, 24)
+ICODE(icode32, 32)
+
+static void micro_icache(void)
+{
+	static uint32_t (*const fn[])(uint32_t) = {icode2, icode4, icode8, icode12, icode16, icode24, icode32};
+	static const int kb[] = {2, 4, 8, 12, 16, 24, 32};
+	char line[240];
+	int n, i, r;
+	uint32_t x = 0;
+	float t0, t1;
+
+	n = snprintf(line, sizeof(line), "MICRO,icache (ns per 32-byte line of code, repeated calls)");
+	for (i = 0; i < (int)(sizeof(kb) / sizeof(kb[0])); i++) {
+		x = fn[i](x);	/* warm */
+		qembd_pd->system->resetElapsedTime();
+		t0 = pdprof_elapsed();
+		for (r = 0; r < 20; r++)
+			x = fn[i](x);
+		t1 = pdprof_elapsed();
+		n += snprintf(line + n, sizeof(line) - n, ",%dKB %.0f", kb[i], (double)(t1 - t0) * 1e9 / (20.0 * kb[i] * 32));
+	}
+	micro_sink = x;
+	pf_line("%s", line);
+}
+
 static void micro(void)
 {
 	enum { ALU_N = 100000, BUF = 512 * 1024 };
@@ -779,6 +831,7 @@ static void micro(void)
 		pf_line("MICRO,heap,memset 512KB,%.0f MB/s", 8.0 * BUF / ((double)(t1 - t0) * 1e6));
 		qembd_pd->system->realloc(buf, 0);
 	}
+	micro_icache();
 	micro_stack();
 	micro_math();
 	micro_overlap_kinds(micro_bss);
@@ -978,7 +1031,7 @@ void pdprof_frame_begin(void)
 		__asm__ volatile("mov %0, sp" : "=r"(sp));
 		base_sp = sp;
 	}
-#if defined(PD_ASM_AB) || defined(PD_STACK_AB)
+#if defined(PD_ASM_AB) || defined(PD_STACK_AB) || defined(PD_PDR_AB)
 	{
 		/* assembly or C (stack or static buffers) by a hash of the frame number: plain odd/even picks up a rhythm in the
 		 * demos (the client section alone differed by over 1 ms between odd and even frames) */
@@ -992,7 +1045,7 @@ void pdprof_frame_begin(void)
 		pd_asm_on = (int)(x & 1);
 	}
 #endif
-#if defined(PD_ASM_AB) || defined(PD_ASM_CHECK) || defined(PD_STACK_AB)
+#if defined(PD_ASM_AB) || defined(PD_ASM_CHECK) || defined(PD_STACK_AB) || defined(PD_PDR_AB)
 	pd_asm_bad = 0;
 #endif
 	entry_ms = qembd_pd->system->getCurrentTimeMilliseconds();

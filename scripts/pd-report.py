@@ -15,7 +15,8 @@ import sys
 
 TOP = ["input", "server", "client", "setup", "world", "bent", "scan", "ent", "view", "part",
        "upscale", "hud", "vid", "snd", "pal"]
-FINE = [("world", ["wmark", "wefrag", "wsurfs", "face"]), ("scan", ["se_ins", "se_gen", "se_rem", "se_step", "dsurf"]),
+FINE = [("world", ["wmark", "wefrag", "wsurfs", "face", "spans", "other"]), ("spans", ["grad", "cache"]),
+        ("setup", ["se_ins", "se_gen", "se_rem"]), ("scan", ["se_ins", "se_gen", "se_rem", "se_step", "dsurf"]),
         ("dsurf", ["cache", "spans", "zspan", "other", "grad"]), ("cache", ["scalloc", "light", "blocks"]),
         ("server", ["sv_run", "sv_phys", "sv_send", "qc"]), ("ent", ["alias", "atrans", "apoly", "lpt", "abbox"])]
 

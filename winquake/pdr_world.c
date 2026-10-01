@@ -232,7 +232,7 @@ Called from R_NewMap, once every model of the level has been loaded.
 */
 void PDR_BuildBrushes (void)
 {
-	int		i;
+	int		i, mark = Hunk_LowMark ();
 	model_t	*m;
 
 	pdr_numbrushes = 0;
@@ -262,6 +262,8 @@ void PDR_BuildBrushes (void)
 		pdr_leafsolid[i] = cl.worldmodel->leafs[i].contents == CONTENTS_SOLID;
 	}
 	pdr_visleaf = NULL;
+	Con_DPrintf ("pdr: %d brush models, %d faces, %d KB\n", pdr_numbrushes, pdr_totalfaces,
+			(Hunk_LowMark () - mark) / 1024);
 }
 
 void PDR_NewMapWorld (void)
@@ -469,9 +471,35 @@ typedef struct
 	const pdr_basis_t	*tb;		/* the face's model space (texture axes, plane) */
 	entity_t			*ent;
 	float				nearzi;
-	qboolean			ready;
-	pdr_spanctx_t		ctx;
+	int					dface;		/* its entry in pdr_dfaces once it has a span, else -1 */
 } faceinfo_t;
+
+/*
+The walk only finds what is visible: each face that gets pixels becomes a dface with its spans
+listed after it. They are drawn afterwards, face by face (PDR_DrawFaces). Doing it in two passes
+keeps the code each loop runs small: on the device code is fetched from slow memory too, and
+walking, clipping, setting up and texturing per face cycled through more code than the
+instruction cache holds.
+*/
+typedef struct
+{
+	pdr_brush_t			*brush;
+	const pdr_basis_t	*tb;
+	entity_t			*ent;
+	float				nearzi;
+	unsigned short		fi;
+	unsigned short		nspans;
+	int					firstspan;
+	const void			*key;		/* its texture: faces are drawn grouped by texture */
+} vface_t;
+
+#define MAX_DFACES	512
+#define MAX_DSPANS	4096
+#define SPAN_PACK(y, x0, x1)	((unsigned)(y) | (unsigned)(x0) << 10 | (unsigned)(x1) << 20)
+
+static vface_t	pdr_dfaces[MAX_DFACES];
+static unsigned	pdr_dspans[MAX_DSPANS];
+static int		pdr_numdfaces, pdr_numdspans;
 
 /* clip a view-space polygon to one frustum plane; the new vertex of an edge is always computed
    from the edge's inside end, so the two faces sharing an edge get the same point */
@@ -571,10 +599,9 @@ static inline int Log2 (unsigned v)
 }
 
 /* span parameters of a face, set up the first time one of its spans is drawn */
-static void PDR_SetupFace (faceinfo_t *fi)
+static void PDR_SetupFace (const vface_t *fi, pdr_spanctx_t *c)
 {
-	pdr_spanctx_t		*c = &fi->ctx;
-	const pdr_face_t	*f = fi->f;
+	const pdr_face_t	*f = PDR_FACE (fi->brush, fi->fi);
 	const pdr_basis_t	*b = fi->tb;
 	model_t				*m = fi->brush->model;
 	mtexinfo_t			*ti = &m->texinfo[f->texinfo];
@@ -583,7 +610,7 @@ static void PDR_SetupFace (faceinfo_t *fi)
 	float				distinv, mipscale, t;
 	int					mip;
 
-	fi->ready = true;
+	PROF_BEGINF(P_GRAD);
 
 // 1/z
 	PDR_TransformToView (b, f->plane, pn);
@@ -596,6 +623,7 @@ static void PDR_SetupFace (faceinfo_t *fi)
 	if (f->flags & PF_SKY)
 	{
 		c->kind = PDR_SPAN_SKY;
+		PROF_ENDF(P_GRAD);
 		return;
 	}
 
@@ -648,6 +676,7 @@ static void PDR_SetupFace (faceinfo_t *fi)
 	else
 		c->tshift = -1;
 
+	PROF_ENDF(P_GRAD);
 	if (c->kind == PDR_SPAN_TURB)
 		return;
 
@@ -658,26 +687,96 @@ static void PDR_SetupFace (faceinfo_t *fi)
 	c->lh = (f->extents[1] >> 4) + 1;
 	c->lmaxs = (c->lw - 1) << 16;
 	c->lmaxt = (c->lh - 1) << 16;
+	PROF_BEGINF(P_CACHE);
 	c->light = PDR_FaceLight (fi->brush, fi->fi, f, &c->lconst);
+	PROF_ENDF(P_CACHE);
 }
 
-/* a run of uncovered pixels [x0, x1) on row y */
-static inline void PDR_Run (faceinfo_t *fi, int y, int x0, int x1)
+/* the faces found so far, and their spans */
+static void PDR_DrawFaces (void)
 {
-	if (!fi->ready)
-		PDR_SetupFace (fi);
-	PDR_DrawSpan (&fi->ctx, y, x0, x1);
-	if (pdr_zany)
-	{
-		int	r = y - pdr_vy, a = x0, b = x1;
+	int		d;
+	short	order[MAX_DFACES];
 
-		if (a < pdr_zx0[r])
-			a = pdr_zx0[r];
-		if (b > pdr_zx1[r])
-			b = pdr_zx1[r];
-		if (a < b)
-			PDR_ZSpan (&fi->ctx, y, a, b);
+	PROF_BEGINF(P_SPANS);
+	for (d=0 ; d<pdr_numdfaces ; d++)
+		order[d] = d;
+	if (PDR_EXPERIMENT(8))	/* experiment 8: grouped by texture */
+	{
+		for (d=1 ; d<pdr_numdfaces ; d++)
+		{
+			int			j = d, o = order[d];
+			const void	*k = pdr_dfaces[o].key;
+
+			while (j > 0 && (uintptr_t)pdr_dfaces[order[j-1]].key > (uintptr_t)k)
+			{
+				order[j] = order[j-1];
+				j--;
+			}
+			order[j] = o;
+		}
 	}
+	for (d=0 ; d<pdr_numdfaces ; d++)
+	{
+		const vface_t	*df = &pdr_dfaces[order[d]];
+		const unsigned	*sp = &pdr_dspans[df->firstspan];
+		pdr_spanctx_t	ctx;
+		int				i;
+
+		PDR_SetupFace (df, &ctx);
+		for (i=0 ; i<df->nspans ; i++)
+		{
+			unsigned	v = sp[i];
+			int			y = v & 1023, x0 = (v >> 10) & 1023, x1 = v >> 20;
+
+			PDR_DrawSpan (&ctx, y, x0, x1);
+			if (pdr_zany && !PDR_EXPERIMENT(6))	/* experiment 6: no z */
+			{
+				int	r = y - pdr_vy, a = x0, b = x1;
+
+				if (a < pdr_zx0[r])
+					a = pdr_zx0[r];
+				if (b > pdr_zx1[r])
+					b = pdr_zx1[r];
+				if (a < b)
+					PDR_ZSpan (&ctx, y, a, b);
+			}
+		}
+	}
+	pdr_c_drawn += pdr_numdfaces;
+	pdr_numdfaces = pdr_numdspans = 0;
+	PROF_ENDF(P_SPANS);
+}
+
+/* a run of uncovered pixels [x0, x1) on row y: noted for PDR_DrawFaces */
+static void PDR_Run (faceinfo_t *fi, int y, int x0, int x1)
+{
+	vface_t	*df;
+
+	if (pdr_numdspans == MAX_DSPANS)
+	{
+		PDR_DrawFaces ();
+		fi->dface = -1;
+	}
+	if (fi->dface < 0)
+	{
+		if (pdr_numdfaces == MAX_DFACES)
+			PDR_DrawFaces ();
+		fi->dface = pdr_numdfaces++;
+		df = &pdr_dfaces[fi->dface];
+		df->brush = fi->brush;
+		df->tb = fi->tb;
+		df->ent = fi->ent;
+		df->nearzi = fi->nearzi;
+		df->fi = fi->fi;
+		df->key = fi->brush->model->texinfo[fi->f->texinfo].texture;
+		df->nspans = 0;
+		df->firstspan = pdr_numdspans;
+	}
+	else
+		df = &pdr_dfaces[fi->dface];
+	pdr_dspans[pdr_numdspans++] = SPAN_PACK (y, x0, x1);
+	df->nspans++;
 	pdr_c_spans++;
 	pdr_c_pixels += x1 - x0;
 	pdr_covered += x1 - x0;
@@ -761,6 +860,7 @@ static void PDR_RasterFace (faceinfo_t *fi, const float (*verts)[3], int nverts,
 	int			i, n, p, ytop, ybot, y;
 
 // transform
+	PROF_BEGINF(P_FACE);
 	in = bufa;
 	for (i=0 ; i<nverts ; i++)
 	{
@@ -783,7 +883,10 @@ static void PDR_RasterFace (faceinfo_t *fi, const float (*verts)[3], int nverts,
 			continue;
 		n = ClipToPlane (in, n, out, nverts + 4, p);
 		if (n < 3)
+		{
+			PROF_ENDF(P_FACE);
 			return;
+		}
 		tmp = in; in = out; out = tmp;
 	}
 
@@ -814,6 +917,7 @@ static void PDR_RasterFace (faceinfo_t *fi, const float (*verts)[3], int nverts,
 	ybot = (int)ceilf (vmax);		/* rows [ytop, ybot) */
 	if (pdr_skip != 2 && ytop < ybot && PDR_ROW_SKIPPED(ytop))
 		ytop++;
+	PROF_ENDF(P_FACE);
 	if (ytop >= ybot)
 		return;
 	PDR_RasterRows (fi, pu, pv, n, ytop, ybot);
@@ -869,7 +973,6 @@ static void PDR_RasterRows (faceinfo_t *fi, const float *pu, const float *pv, in
 // spans
 	pdr_c_faces++;
 	{
-		int	before = pdr_c_spans;
 
 		for (y=ytop ; y<ybot ; y+=pdr_ystep)
 		{
@@ -888,8 +991,6 @@ static void PDR_RasterRows (faceinfo_t *fi, const float *pu, const float *pv, in
 			if (x0 < x1)
 				PDR_CoverSpan (fi, y, x0, x1);
 		}
-		if (pdr_c_spans != before)
-			pdr_c_drawn++;
 	}
 }
 
@@ -1248,7 +1349,7 @@ static void PDR_DrawLeafFragments (int leaf)
 		fi.f = PDR_FACE (be->brush, fr->face);
 		fi.tb = &be->basis;
 		fi.ent = be->ent;
-		fi.ready = false;
+		fi.dface = -1;
 		PDR_RasterFace (&fi, (const float (*)[3])fr->verts, fr->numverts, 15);
 		o = fr->next;
 	}
@@ -1316,7 +1417,7 @@ static void PDR_WorldFace (int fi, int clip)
 	info.f = PDR_FACE (pdr_world, fi);
 	info.tb = &pdr_wbasis;
 	info.ent = NULL;
-	info.ready = false;
+	info.dface = -1;
 	PDR_RasterFace (&info, (const float (*)[3])info.f->verts, info.f->numverts, clip & 15);
 }
 
@@ -1340,6 +1441,7 @@ static void PDR_VisitLeaf (int leaf, int clip)
 		return;
 	}
 	pdr_c_leafs++;
+	PROF_BEGINF(P_WMARK);
 
 	{
 		const unsigned short	*mark = pdr_world->marks + pl->firstmark;
@@ -1358,6 +1460,7 @@ static void PDR_VisitLeaf (int leaf, int clip)
 		}
 	}
 
+	PROF_ENDF(P_WMARK);
 	if (pdr_leaffrag[leaf] >= 0 && !(clip & CLIP_FAR))
 		PDR_DrawLeafFragments (leaf);
 }
@@ -1447,6 +1550,7 @@ static void PDR_Walk (void)
 
 			if (e.state <= 2)
 			{
+				PROF_BEGINF(P_WSURFS);
 				int	first = side ? nf->first + nf->nfront : nf->first;
 				int	count = side ? nf->nback : nf->nfront;
 				int	i;
@@ -1458,6 +1562,7 @@ static void PDR_Walk (void)
 					if (BIT_TEST (pdr_facevis, fi))
 						PDR_WorldFace (fi, clip);
 				}
+				PROF_ENDF(P_WSURFS);
 			}
 			pn = &pdr_world->nodes[e.node];
 			stack[sp].node = pn->children[!side];
@@ -1531,9 +1636,13 @@ static void PDR_DrawWorldWith (uint32_t *cov)
 	pdr_covtotal = rows * pdr_vw;
 
 	memset (pdr_facevis, 0, pdr_facevis_bytes);
+	pdr_numdfaces = pdr_numdspans = 0;
 	PDR_Walk ();
+	PDR_DrawFaces ();
+	PROF_BEGINF(P_OTHER);
 	if (pdr_covered < pdr_covtotal)
 		PDR_FillUncovered ();
+	PROF_ENDF(P_OTHER);
 }
 
 void PDR_DrawWorld (void)
