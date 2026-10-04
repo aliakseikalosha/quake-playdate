@@ -1,6 +1,6 @@
 # Original software renderer (`r_*`, `d_*`)
 
-[← Documentation index](../README.md)
+[← Documentation index](../README.md) · [Source index](../source-index.md)
 
 This is id Software's WinQuake software renderer, kept in the tree and built when the Playdate renderer is switched off
 (`-DPD_NEW_RENDERER=OFF`). It has two halves:
@@ -217,7 +217,22 @@ Lighting.
 
 ## `r_sky.c`
 
-`R_InitSky(mt)` splits the 256×128 sky texture into its two layers (front: left half, back: right half); `R_MakeSky` and `R_SetSkyFrame` generate the scrolling 128×128 sky tile each frame (`R_GenSkyTile`, `R_GenSkyTile16`).
+The sky texture is 256×128: two 128×128 layers side by side. [`model.c`](models.md#modelc) calls `R_InitSky(mt)` when it loads a texture named `sky*`, and that splits it once:
+the right half is copied into `newsky` (the **back layer**); the left half becomes `bottomsky` (the **front layer**, stored 131 bytes per row with its first three pixels repeated) plus `bottommask`, which is `0xff` where a front pixel is colour 0 (transparent) and `0` elsewhere.
+`r_skysource` points at `newsky`, which the sky span drawer ([`d_sky.c`](#d_skyc)) reads.
+
+| Step | Function | Called from | What it does |
+| --- | --- | --- | --- |
+| 1 | `R_SetSkyFrame` | `R_SetupFrame` ([`r_misc.c`](#r_miscc)) | Works out `skytime` from `cl.time`, wrapped at the period after which both layer speeds (`iskyspeed` 8, `iskyspeed2` 2) line up again, and clears `r_skymade`. |
+| 2 | `R_MakeSky` | `D_DrawSurfaces` ([`d_edge.c`](#d_edgec)), once per frame, when a sky surface is visible and `r_skymade` is 0 | Composes the 128×128 sky image into `newsky`: per pixel `(back & mask) \| front`, with the front layer read at an offset scrolled by `skytime * skyspeed` in x and y. It returns at once when the offsets did not change since the last call. |
+| alt. | `R_GenSkyTile`, `R_GenSkyTile16` | `R_GenTile` ([`r_surf.c`](#r_surfc)) | The same composition written to a surface-cache tile (8-bit and 16-bit) for a sky surface that goes through the surface cache. |
+
+```c
+// R_MakeSky, per output pixel: the back layer shows through wherever the front layer is transparent
+*(byte *)pnewsky = (*((byte *)pnewsky + 128) & bottommask[ofs]) | bottomsky[ofs];
+```
+
+**Port change:** the 4-bytes-at-a-time variants of `R_MakeSky` and `R_GenSkyTile` (`UNALIGNED_OK`) were removed; the byte-wise loops are what remains.
 
 ---
 
@@ -237,11 +252,28 @@ Alias models (monsters, items, weapons), transformed and lit here, drawn by `d_p
 
 ## `r_aclip.c`
 
-Clips an alias triangle that crosses the screen edges or near plane, producing up to 8 vertices: `R_AliasClipTriangle`, `R_AliasClip(in, out, flag, count, clip)`, `R_Alias_clip_z`, `_left`, `_right`, `_top`, `_bottom`. The scratch polygon is on the stack with `PD_STACK`.
+Clips one alias-model triangle that [`r_alias.c`](#r_aliasc) found crossing the near plane or a screen edge, so that [`d_polyse.c`](#d_polysec) only ever draws polygons inside the view.
+`R_AliasClipTriangle(ptri)` is the entry point:
+
+1. It copies the triangle's three projected vertices (`finalvert_t`, each with `ALIAS_*_CLIP` flags) into `fv[0]`. For a back-facing triangle, vertices on the model's seam (`ALIAS_ONSEAM`) get their s coordinate moved by `seamfixupX16`, to the back half of the skin.
+2. It ORs the three vertices' flags. With `ALIAS_Z_CLIP` set it fetches the camera-space vertices (`auxvert_t`) and clips against the near plane first (`R_Alias_clip_z`), the one clip that needs the view-space z.
+3. It then clips against each of left, right, bottom and top that any vertex crossed (`R_Alias_clip_left` …). Every pass is `R_AliasClip(in, out, flag, count, clip)`: it walks the polygon's edges and, where an edge crosses the plane, makes a new vertex by linear interpolation of position, s, t, light and z, then re-flags it. The two buffers `fv[0]` and `fv[1]` swap roles between passes (`pingpong`); a pass that leaves nothing ends the triangle.
+4. The result has up to 8 vertices. They are clamped to the alias view rectangle and drawn as a fan of triangles through `D_PolysetDraw`.
+
+**Port changes.** With `PD_STACK`, the clipped polygon (`fv`, `av`) lives on the fast stack when [`PD_StackRoom`](perf-infrastructure.md#pd_stackh) says it fits, and in static buffers otherwise; the picture is identical. With `PD_FAST_ALIAS`, the camera-space vertices are no longer stored for every vertex by `R_AliasTransformAndProjectFinalVerts`; this file recomputes the three it needs (`R_AliasAuxVert`). Single-precision literals throughout.
 
 ## `r_sprite.c`
 
-Sprites: `R_DrawSprite` → `R_GetSpriteframe` (frame or group by time), `R_RotateSprite`, `R_ClipSpriteFace`, `R_SetupAndDrawSprite` (build a clipped polygon in `spritedesc_t`, hand it to `D_DrawSprite`).
+Sprites (explosions, bubbles, beams): `R_DrawEntitiesOnList` ([`r_main.c`](#r_mainc)) calls `R_DrawSprite` for each sprite entity, which prepares a flat, textured quad and hands it to [`d_sprite.c`](#d_spritec).
+
+| Function | What it does |
+| --- | --- |
+| `R_DrawSprite` | Picks the frame, then builds the sprite's three axes (`r_spritedesc.vpn`, `vright`, `vup`) according to the sprite's type: `SPR_FACING_UPRIGHT` (up is world z, right is perpendicular to the direction to the viewer), `SPR_VP_PARALLEL` (parallel to the view plane), `SPR_VP_PARALLEL_UPRIGHT`, `SPR_ORIENTED` (from the entity's angles) and `SPR_VP_PARALLEL_ORIENTED` (view-parallel, rotated by the entity's roll). The two "upright" types draw nothing when the view is within 1° of straight up or down, where their cross product is undefined. |
+| `R_GetSpriteframe` | A single frame, or for a group the frame whose interval contains `cl.time + syncbase` modulo the group's full interval. |
+| `R_RotateSprite` | For beam sprites (`beamlength` ≠ 0), moves the origin back along the sprite's view direction. |
+| `R_SetupAndDrawSprite` | Culls a sprite facing away (`dot >= 0`), builds the four corners in world space with their s and t, clips the quad to the four frustum planes in world space (`R_ClipSpriteFace`, which ping-pongs between the two `clip_verts` buffers), transforms the result to view space (z clamped to `NEAR_CLIP`), projects it into `emitpoint_t`s (`u`, `v`, `zi`, `s`, `t`) and calls `D_DrawSprite`. |
+
+**Port change:** single-precision constants and `sinf`/`cosf` only; nothing else differs from the original.
 
 ## `r_part.c`
 
@@ -273,7 +305,19 @@ Uses the fixed pool `cl_efrags[MAX_EFRAGS]` (640). The Playdate renderer uses th
 
 ## `d_modech.c`
 
-`D_ViewChanged`: recompute everything the driver derives from the view: `d_vrectx/y`, `d_zrowbytes`, `d_pscantable` (row start offsets), `zspantable[]` (z-buffer row starts), `d_y_aspect_shift`, the particle clip limits.
+`D_ViewChanged` recomputes everything the driver derives from the view. `R_ViewChanged` ([`r_main.c`](#r_mainc)) calls it whenever the view rectangle, field of view or screen size changes.
+
+| It sets | Meaning |
+| --- | --- |
+| `scale_for_mip` | The larger of `xscale` and `yscale`; [`d_init.c`](#d_initc) turns it into the per-frame mip scale. |
+| `d_zrowbytes`, `d_zwidth` | The z buffer's row size, from `vid.width`. |
+| `d_pix_min`, `d_pix_max`, `d_pix_shift` | The smallest and largest particle size and the shift that maps a particle's 1/z to a size; they scale with the view width relative to 320 ([`d_part.c`](#d_partc) uses them). |
+| `d_y_aspect_shift` | 1 when the pixel aspect is above 1.4 (rows are drawn twice for tall pixels), else 0. |
+| `d_vrectx`, `d_vrecty`, `d_vrectright_particle`, `d_vrectbottom_particle` | The view rectangle, with the right and bottom edges pulled in by the largest particle. |
+| `d_scantable[y]` | The offset of row *y* of the colour buffer (`y * rowbytes`; `WARP_WIDTH` bytes per row while the underwater warp is on). |
+| `zspantable[y]` | A pointer to row *y* of the z buffer. |
+
+**Port changes.** `D_Patch`, which made x86 code writable for self-modifying assembly, was removed, and the particle-size arithmetic uses `float` constants.
 
 ---
 
@@ -317,11 +361,26 @@ The arithmetic is exactly that of the original functions, so the pixels are iden
 
 ## `d_sprite.c`
 
-Sprites: `D_DrawSprite` (z-tested polygon), `D_SpriteCalculateGradients`, `D_SpriteScanLeftEdge` / `D_SpriteScanRightEdge` (build `sspan_t`s), `D_SpriteDrawSpans`.
+Draws the clipped quad that [`r_sprite.c`](#r_spritec) projected (`r_spritedesc.pverts`, up to `MAXWORKINGVERTS` points) as a z-tested, textured polygon. `D_DrawSprite` runs four steps:
+
+1. It finds the top and bottom vertices (`minindex`, `maxindex`) and returns if the polygon crosses no scan line; it then points the texture at the frame's pixels (`cacheblock`, `cachewidth`) and closes the polygon by copying vertex 0 past the end.
+2. `D_SpriteCalculateGradients` transforms the sprite's axes to view space and fills in the same plane-equation variables the surface drawer uses ([`d_scan.c`](#d_scanc)): `d_sdivz*`, `d_tdivz*` and `d_zi*` (s/z, t/z and 1/z as linear functions of screen x and y), plus `sadjust`, `tadjust`, `bbextents`, `bbextentt`.
+3. `D_SpriteScanLeftEdge` and `D_SpriteScanRightEdge` walk the polygon's two sides and fill one `sspan_t` per scan line: the left pass sets each span's `u`, the right pass its `count` (clamped to the view rectangle) and ends the list with `DS_SPAN_LIST_END`.
+4. `D_SpriteDrawSpans` draws the spans: s, t and 1/z are computed exactly every 8 pixels and stepped linearly in between (the same 8-pixel runs as `D_DrawSpans8`); colour 255 is transparent and skipped, and a pixel is written, with its z, only where it is at least as near as what the z buffer holds.
+
+**Port changes.** `R_ROW_SKIPPED(v)` skips the rows an interlaced frame keeps from the previous one. The `spans[MAXHEIGHT+1]` scratch array is `static` ("keep big buffers off the small device stack"). The x86 assembly alternative (`id386`) was removed, and the constants are single precision.
 
 ## `d_part.c`
 
-Particles: `D_StartParticles` / `D_DrawParticle(pparticle)` (a z-tested square dot at the particle's projected position; size from its depth) / `D_EndParticles`. **Port:** skips rows kept by interlacing.
+Draws particles one at a time: `R_DrawParticles` ([`r_part.c`](#r_partc)) brackets its loop with `D_StartParticles` and `D_EndParticles`, which are empty in the software driver, and calls `D_DrawParticle(pparticle)` for each particle.
+
+`D_DrawParticle`:
+
+1. Transforms the particle's origin to view space (`r_pright`, `r_pup`, `r_ppn`) and drops it when nearer than `PARTICLE_Z_CLIP`.
+2. Projects it to a screen position (`u`, `v`) and drops it outside the view rectangle; the right and bottom limits (`d_vrectright_particle`, `d_vrectbottom_particle`) are pulled in by the largest particle size so a block never leaves the view ([`d_modech.c`](#d_modechc) sets them).
+3. Sizes it by distance: `pix = izi >> d_pix_shift`, clamped to `d_pix_min` .. `d_pix_max`, so near particles are bigger. It draws a `pix` × `pix` block (rows doubled when `d_y_aspect_shift` is 1), writing the particle's colour and z only where the z buffer says the particle is in front. Sizes 1 to 4 have their own unrolled loops.
+
+**Port changes.** `screenwidth`, `d_zwidth` and `d_y_aspect_shift` are copied to locals once per particle, since a particle block rereads them for every row. When the frame is interlaced (`r_interlace_skip != 2`) the rows kept from the previous frame are skipped (`R_ROW_SKIPPED`). The x86 assembly alternative (`id386`) was removed, and the constants are single precision. The Playdate renderer has its own particle loop in [`pdr_sprite.c`](renderer-pdr.md#pdr_spritec).
 
 ## `d_zpoint.c`
 

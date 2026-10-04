@@ -1094,6 +1094,7 @@ enum
 	OPT_RESET,
 	OPT_BRIGHTNESS,
 	OPT_CRANKSPEED,
+	OPT_MUSIC,
 	OPT_MUSICVOL,
 	OPT_SFXVOL,
 	OPT_ALWAYSRUN,
@@ -1125,6 +1126,10 @@ static qboolean	options_to_game;	// opened by M_Menu_Options_Shortcut: Escape go
 
 // crank turn speed (degrees of view turn per degree of crank), see port/boards/playdate/main.c
 cvar_t	crank_speed = {"crank_speed", "1.4", true};
+
+// music on/off ("Music"; the "cd on" and "cd off" commands set it too), see port/boards/playdate/cd_pd.c;
+// how loud it is is bgmvolume
+cvar_t	bgmenabled = {"bgmenabled", "1", true};
 
 // frame rate cap: the rate the Playdate calls the game at (display->setRefreshRate,
 // port/boards/playdate/main.c), 0 = unlimited; 30 by default
@@ -1236,6 +1241,9 @@ void M_AdjustSliders (int dir)
 		if (crank_speed.value > CRANK_SPEED_MAX)
 			crank_speed.value = CRANK_SPEED_MAX;
 		Cvar_SetValue ("crank_speed", crank_speed.value);
+		break;
+	case OPT_MUSIC:
+		Cvar_SetValue ("bgmenabled", !bgmenabled.value);
 		break;
 	case OPT_MUSICVOL:
 #ifdef _WIN32
@@ -1400,6 +1408,10 @@ void M_Options_Draw (void)
 			M_OptPrint (OPT_LABEL_X, y, "Crank speed");
 			M_OptSlider (OPT_VALUE_X, y, (crank_speed.value - CRANK_SPEED_MIN) / (CRANK_SPEED_MAX - CRANK_SPEED_MIN));
 			break;
+		case OPT_MUSIC:
+			M_OptPrint (OPT_LABEL_X, y, "Music");
+			M_OptCheckbox (OPT_VALUE_X, y, bgmenabled.value);
+			break;
 		case OPT_MUSICVOL:
 			M_OptPrint (OPT_LABEL_X, y, "Music volume");
 			M_OptSlider (OPT_VALUE_X, y, bgmvolume.value);
@@ -1499,6 +1511,7 @@ void M_Options_Key (int k)
 			Cvar_SetValue ("crank_speed", 1.4f);
 			Cvar_SetValue ("pd_maxfps", 30);
 			Cvar_SetValue ("scr_showfps", 1);
+			Cvar_SetValue ("bgmenabled", 1);
 			host_options_dirty = true;
 			break;
 		case OPT_VIDEO:
@@ -3239,6 +3252,7 @@ void M_Init (void)
 {
 	Cmd_AddCommand ("togglemenu", M_ToggleMenu_f);
 	Cvar_RegisterVariable (&crank_speed);
+	Cvar_RegisterVariable (&bgmenabled);
 	Cvar_RegisterVariable (&pd_maxfps);
 	Cvar_RegisterVariable (&pd_dither);
 

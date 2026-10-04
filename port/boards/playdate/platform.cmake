@@ -81,6 +81,11 @@ option(PD_STACK_AB "With PD_PROFILE and PD_STACK: stack buffers on half of the f
 # picked by a hash of the frame number; compare with scripts/pd-report.py --ab
 set(PD_PDR_EXP 0 CACHE STRING "With PD_PROFILE and PD_NEW_RENDERER: renderer experiment for A/B runs (0 = none)")
 
+# A release build ships Source/id1/pak0_demo.pak (the shareware data) as id1/pak0.pak, if there is
+# one; any other build leaves pak0_demo.pak out of the .pdx (pdx_pak.cmake). Set by
+# scripts/release-device.sh. CMAKE_BUILD_TYPE cannot tell: it defaults to Release above.
+option(PD_RELEASE "Release build: ship pak0_demo.pak as id1/pak0.pak" OFF)
+
 option(PD_PROFILE "Build the on-device profiler" OFF)
 option(PD_PROFILE_FINE "With PD_PROFILE: also time world faces, edge scan parts, surface builds, server and QuakeC builtins (adds ~2 ms/frame of timer overhead)" OFF)
 option(PD_BENCH "With PD_PROFILE: run the demos as timedemos" OFF)

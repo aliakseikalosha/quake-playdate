@@ -1,6 +1,6 @@
 # Screen, HUD, console and menus
 
-[← Documentation index](../README.md)
+[← Documentation index](../README.md) · [Source index](../source-index.md)
 
 Everything drawn *on top of* (or around) the 3D view: the frame sequence that assembles the screen, the 2D drawing
 primitives, the status bar, the console and the menus.
@@ -202,6 +202,7 @@ The original Options menu was replaced by a scrolling list drawn at 2× in scree
 | Reset defaults | Enter | Runs `exec default.cfg`, then sets the port's cvars back to their defaults (see below). |
 | Brightness | slider | `gamma` 0.5–1.0 |
 | **Crank speed** | slider (0.2 steps, 0.2–3) | `crank_speed` (default 1.4) |
+| **Music** | checkbox | `bgmenabled` (default on); off stops the music, on brings the level's track back ([`cd_pd.c`](../port/playdate.md#cd_pdc)) |
 | Music volume, SFX volume | sliders | `bgmvolume`, `volume` |
 | Always run | checkbox | `cl_forwardspeed` / `cl_backspeed` 200 ↔ 400 |
 | **Autofire** | checkbox | `cl_autofire` |
@@ -219,6 +220,7 @@ Removed rows: Customize controls, Go to console, Screen size, Invert mouse, Look
 cvar_t crank_speed = {"crank_speed", "1.4", true};
 cvar_t pd_maxfps   = {"pd_maxfps",   "30",  true};
 cvar_t pd_dither   = {"pd_dither",   "0",   true};
+cvar_t bgmenabled  = {"bgmenabled",  "1",   true};   // read by port/boards/playdate/cd_pd.c
 
 // every change marks the options dirty so Host_SaveOptions writes config.cfg when the menu is left
 void M_AdjustSliders (int dir)
@@ -233,11 +235,12 @@ void M_AdjustSliders (int dir)
 
 ```c
 // "Reset defaults": default.cfg knows nothing about the port's options, so set them here
+// (default.cfg is the pak's, or the built-in one in defaultcfg.h when the pak has none)
 Cbuf_AddText ("exec default.cfg\n");
 Cvar_SetValue ("d_mipcap", 1);      Cvar_SetValue ("r_interlace", 1);
 Cvar_SetValue ("pd_dither", 0);     Cvar_SetValue ("r_maxdist", 512);
 Cvar_SetValue ("crank_speed", 1.4f); Cvar_SetValue ("pd_maxfps", 30);
-Cvar_SetValue ("scr_showfps", 1);
+Cvar_SetValue ("scr_showfps", 1);  Cvar_SetValue ("bgmenabled", 1);
 ```
 
 Leaving the menu with Escape calls `Host_SaveOptions()`; with `options_to_game` (opened from the system menu) Escape closes the menu via `M_Menu_Close`.

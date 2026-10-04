@@ -4,6 +4,8 @@ A WinQuake port for the [Playdate](https://play.date/), running on the device an
 
 Based on the original [Quake GPL source](https://github.com/id-Software/Quake), through [sysprog21/quake-embedded](https://github.com/sysprog21/quake-embedded).
 
+Source documentation is in [docs/](docs/README.md): a [source code index](docs/source-index.md) of every file with links to a detailed description of each.
+
 ![Quake demo 1 on the Playdate screen](docs/demo.gif)
 
 *Demo 1 as the Playdate screen shows it. Captured on a computer from the port's own 1-bit display output (see [the last section](#checking-that-an-optimisation-does-not-change-the-picture)), not filmed on a device, so it says nothing about device speed.*
@@ -39,6 +41,17 @@ Requires the [Playdate SDK](https://play.date/dev/) (`PLAYDATE_SDK_PATH` set) an
 
 Game data is not included. Copy your `pak0.pak` (the freely distributable shareware one is fine) to
 `port/boards/playdate/Source/id1/pak0.pak` before building, or into the game's Data folder at `id1/`.
+If you also put the shareware pak there as `Source/id1/pak0_demo.pak`, the release build
+(`scripts/release-device.sh`) ships it as `id1/pak0.pak` in place of your `pak0.pak`; every other build leaves it out.
+The shareware pak and the 2021 re-release's `pak0.pak` both work. The re-release's has no `default.cfg`, so the engine
+falls back to a built-in copy (`winquake/defaultcfg.h`) and the D-pad and buttons are bound; its QuakeC also needs a
+`campaign` cvar and `MOVETYPE_BOUNCEMISSILE` for gibs, and a large level could crash the renderer's model cache.
+All of that is handled; see [docs/port/game-data.md](docs/port/game-data.md).
+
+Music is optional: the CD tracks as `Quake02.wav` ... `Quake11.wav` (the re-release's names) in `port/boards/playdate/Source/id1/music/`
+play as the levels' music, streamed from the `.pdx`. As PCM the ten tracks are about 590 MB; as IMA ADPCM they are about 150 MB (27-54 dB signal-to-noise against the PCM),
+see [`cd_pd.c`](docs/port/playdate.md#cd_pdc) for the `ffmpeg` command.
+The release build leaves the music out together with the full `pak0.pak`.
 
 ```shell
 git clone https://github.com/aliakseikalosha/quake-playdate && cd quake-playdate
@@ -111,7 +124,7 @@ Renderer experiments: `-DPD_PDR_EXP=n` (with `PD_PROFILE`) runs the code under `
 
 The defaults are the settings the author plays with: texture detail low, interlaced on, draw distance 512, crank speed 1.4, max framerate 30, show FPS on (plus Quake's own defaults). An existing config.cfg keeps whatever it says; "Reset defaults" goes back to these.
 
-The Options menu (drawn with a double-size font; the Customize controls, Go to console, Screen size, Invert mouse, Lookspring and Lookstrafe rows are gone, so the console can no longer be opened on the device; `viewsize` and the others keep whatever config.cfg says) keeps its settings (brightness, **crank speed**, volume, always run, autofire, **texture detail**, **interlaced**, **dithering**, **draw distance**, **max framerate**, **show FPS** ...) in `config.cfg` in the game's Data folder. It is written when you leave the Options menu and when the system pauses, locks or terminates the game, and read at the next launch. Key bindings are not saved (they come from `default.cfg` and the port's own button mapping).
+The Options menu (drawn with a double-size font; the Customize controls, Go to console, Screen size, Invert mouse, Lookspring and Lookstrafe rows are gone, so the console can no longer be opened on the device; `viewsize` and the others keep whatever config.cfg says) keeps its settings (brightness, **crank speed**, **music** on/off, volume, always run, autofire, **texture detail**, **interlaced**, **dithering**, **draw distance**, **max framerate**, **show FPS** ...) in `config.cfg` in the game's Data folder. It is written when you leave the Options menu and when the system pauses, locks or terminates the game, and read at the next launch. Key bindings are not saved (they come from `default.cfg` and the port's own button mapping).
 
 The Load and Save menus use the same double-size font. A slot shows the level name cut to 15 characters and the kills as `killed/total` (the full 39-character save comment does not fit at that size).
 

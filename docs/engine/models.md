@@ -1,6 +1,6 @@
 # Models and map formats
 
-[← Documentation index](../README.md)
+[← Documentation index](../README.md) · [Source index](../source-index.md)
 
 Everything the game draws and collides with comes from three binary file formats stored in `pak0.pak`:
 

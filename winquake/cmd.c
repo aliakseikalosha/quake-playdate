@@ -20,6 +20,7 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 // cmd.c -- Quake script command processing module
 
 #include "quakedef.h"
+#include "defaultcfg.h"
 
 void Cmd_ForwardToServer (void);
 
@@ -295,11 +296,22 @@ void Cmd_Exec_f (void)
 	f = (char *)COM_LoadHunkFile (Cmd_Argv(1));
 	if (!f)
 	{
+		// the re-release's pak0.pak has no default.cfg (its engine has it built in), and without
+		// it nothing is bound: use ours (defaultcfg.h)
+		if (!Q_strcmp (Cmd_Argv(1), "default.cfg"))
+		{
+			Con_Printf ("execing default.cfg (built in)\n");
+			Cbuf_InsertText ((char *)default_cfg);
+			return;
+		}
 		Con_Printf ("couldn't exec %s\n",Cmd_Argv(1));
 		return;
 	}
 	Con_Printf ("execing %s\n",Cmd_Argv(1));
-	
+
+	// the file may not end in a newline (the re-release's quake.rc does not), which would glue
+	// its last command to whatever is queued behind it
+	Cbuf_InsertText ("\n");
 	Cbuf_InsertText (f);
 	Hunk_FreeToLowMark (mark);
 }

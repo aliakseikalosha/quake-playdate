@@ -3,5 +3,5 @@ author=Aliaksei Kalosha
 description=Quake port for a Playdate base on sysprog21 "Quake for embedded devices"
 bundleID=com.aliakseikalosha.quake
 version=0.3
-buildNumber=89
+buildNumber=90
 imagePath=

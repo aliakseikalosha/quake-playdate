@@ -1,6 +1,6 @@
 # Playdate board
 
-[← Documentation index](../README.md) · Directory: [`port/boards/playdate/`](../../port/boards/playdate/)
+[← Documentation index](../README.md) · [Source index](../source-index.md) · Directory: [`port/boards/playdate/`](../../port/boards/playdate/)
 
 The Playdate is the project's only target: a 168 MHz Cortex-M7 with a single-precision FPU,
 a 400×240 1-bit LCD, a D-pad, A/B buttons and a crank. The game runs as a **C pure-game** `.pdx`:
@@ -25,6 +25,7 @@ Playdate OS ──eventHandler()──► main.c ──update()──► poll_in
 | [`autofire.c/.h`](#autofirec--autofireh) | Autofire when the crank is out |
 | [`weapons.c/.h`](#weaponsc--weaponsh) | Weapon list for the system menu |
 | [`snd.c`](#sndc) | Sound through Playdate `SamplePlayer`s |
+| [`cd_pd.c`](#cd_pdc) | CD music: `id1/music/QuakeNN` streamed by a `FilePlayer` |
 | [`pdprof.c`](#pdprofc) | On-device profiler (only with `PD_PROFILE`) |
 | `platform.cmake`, `CMakeLists.txt`, `toolchain.cmake`, `pdx_*.cmake` | See [Build system](../build-system.md) |
 | `Source/pdxinfo` | Game metadata (`name`, `bundleID`, `buildNumber`, …) |
@@ -99,6 +100,17 @@ Buttons map to different Quake keys in the game and in menus:
 | A | `K_CTRL` (+attack) | `K_ENTER` |
 | B | `K_SPACE` (+jump) | `K_ESCAPE` |
 
+The buttons only produce *keys*; what a key does is whatever is **bound** to it. The bindings come from `default.cfg`
+(`quake.rc` runs it at start-up), and when the pak has none (the 2021 re-release's) from the
+[built-in copy](../engine/core.md#built-in-defaultcfg-defaultcfgh); without them the D-pad would do nothing.
+`main.c` itself only binds the two strafe keys:
+
+```c
+// after qembd_init()
+Key_SetBinding(',', "+moveleft");
+Key_SetBinding('.', "+moveright");
+```
+
 Rules in `poll_input()`:
 
 - The key *sent on press* is remembered and *released with the same key*, so switching between
@@ -125,7 +137,8 @@ pdq_autofire_update((cur & kButtonA) != 0, playing && !qembd_pd->system->isCrank
 | `kEventInit` | Save the `PlaydateAPI*` in `qembd_pd`, set the refresh rate, add the **Game Menu** and **Options** menu items, register `update`. |
 | `kEventPause` | Rebuild the **Weapon** menu item (`rebuild_weapon_item`) so it lists only usable weapons. |
 | `kEventPause` / `kEventLock` / `kEventTerminate` | `Host_SaveOptions()` (writes `config.cfg`). The system can stop the game without `Host_Shutdown` ever running. |
-| `kEventResume` / `kEventUnlock` | `qembd_display_invalidate()`: the system drew over the LCD buffer, so redraw every row. |
+| `kEventPause` / `kEventLock` | `qembd_cd_suspend(1)`: the music pauses while the system menu or lock screen has the device. |
+| `kEventResume` / `kEventUnlock` | `qembd_cd_suspend(0)` (the music carries on where it stopped) and `qembd_display_invalidate()`: the system drew over the LCD buffer, so redraw every row. |
 
 The Weapon item is an options menu item whose choices are produced by
 [`weapons.c`](#weaponsc--weaponsh):
@@ -403,7 +416,67 @@ right = vol * scale * (dot < 0 ? 1.0f + dot : 1.0f);
 ```
 
 Not supported (empty functions): ambient and looping sounds (`S_StaticSound`, `S_AmbientOn/Off`),
-CD music, the DMA mixer. It registers the `volume` and `bgmvolume` cvars.
+the DMA mixer. CD music is [`cd_pd.c`](#cd_pdc). `snd.c` registers the `volume` and `bgmvolume` cvars
+(`bgmvolume` is the music volume, used by `cd_pd.c`).
+
+---
+
+## `cd_pd.c`
+
+Quake's music is CD tracks 2-11. The engine asks for them through `CDAudio_Play` (the `svc_cdtrack` message that
+every level sends, from the level's `sounds` key; the `cd` console command), `CDAudio_Pause`/`Resume` (the game pause)
+and `CDAudio_Update` (every frame). There is no CD, so track *N* is the file `id1/music/QuakeNN`, the names the
+2021 re-release's music has: `Quake02.wav` ... `Quake11.wav` in `Source/id1/music/`.
+
+`pdc` compiles a `.wav` to `.pda` and keeps its format (a PCM WAV stays PCM, an ADPCM WAV stays ADPCM), so the built `.pdx`
+holds `id1/music/Quake02.pda` etc. A Playdate `FilePlayer` streams the file from flash, so only the player's buffer is in RAM.
+`load_track` tries `.pda`, then `.mp3`, first in the game directory (`com_gamedir`, so a mod can bring its own music) and
+then in `id1`. Without the files every call is a quiet no-op (`Con_DPrintf`, so `developer 1` shows it).
+
+| Function | Behaviour |
+| --- | --- |
+| `CDAudio_Init` | Allocates the `FilePlayer`, registers the `cd` command. |
+| `CDAudio_Play(track, loop)` | Remembers the request (`req_track`), and, if the music is on, loads the file and starts it; a level's music loops (`play(player, 0)`), `cd play` plays once. The track that is already playing is left alone, so a new level with the same music does not restart it. |
+| `CDAudio_Stop` / `Pause` / `Resume` | Stop unloads and forgets the request; pause and resume keep the position. |
+| `CDAudio_Update` | Notices the **Music** option changing (`sync_enabled`), applies `bgmvolume` (0 pauses the stream instead of playing silence) and notices a `cd play` track that ended. |
+| `qembd_cd_suspend(on)` | Called from `eventHandler` for the system menu and lock screen (see [events](#system-menu-and-events)). |
+| `cd` command | `on` and `off` set `bgmenabled` (so they are saved like the menu option); `reset`, `play N`, `loop N`, `stop`, `pause`, `resume`, `info`. `remap`, `eject` and `close` do nothing without a drive. |
+
+**The Music option.** Options > Music is the archived cvar `bgmenabled` (default on, defined in `menu.c`; Reset defaults turns it
+on). Switching it off unloads the track but keeps the last request, so switching it on again starts the level's music, not
+silence until the next level; a request that arrives while it is off (a new level) is kept the same way. `cd stop`, a
+`cd play` track that ended and a missing file clear or never set the request, so nothing restarts by itself.
+
+Everything funnels through one function, `apply()`, which compares what is wanted (a track, not paused by the game, not
+suspended by the system, `bgmvolume` > 0) with what the player is doing and issues the `play`/`pause`/`setVolume` calls:
+
+```c
+int want = play_track && !paused && !suspended && vol > 0;
+if (!want) { if (started) { fp->pause(player); started = 0; } return; }
+if (vol != volume_set) { fp->setVolume(player, vol, vol); volume_set = vol; }
+if (started && fp->isPlaying(player)) return;
+if (started && !looping) { play_track = 0; started = 0; return; }   // a "cd play" track reached its end
+fp->play(player, looping ? 0 : 1);                                   // first start, resume, or a looped track that stopped
+```
+
+**File size.** The re-release's tracks are 44.1 kHz 16-bit stereo PCM, about 590 MB for the ten of them, and `pdc` keeps
+them that way. The `FilePlayer` also plays IMA ADPCM, a quarter of the size (about 150 MB), which `pdc` keeps as well.
+Converted this way the ten tracks keep their length and sample rate and measure 27-54 dB signal-to-noise against the PCM
+(lowest on `Quake02`, the busiest):
+
+```shell
+cd port/boards/playdate/Source/id1/music
+mkdir adpcm && for f in Quake*.wav; do ffmpeg -i "$f" -acodec adpcm_ima_wav "adpcm/$f"; done
+# keep the PCM originals somewhere outside Source/ (pdc bundles everything in it), then move adpcm/*.wav here
+```
+
+**Release builds** (`-DPD_RELEASE=ON` with a `pak0_demo.pak`) leave `id1/music` out of the `.pdx`, like the full `pak0.pak`
+([which `pak0.pak` the `.pdx` gets](../build-system.md#which-pak0pak-the-pdx-gets)).
+
+> **Not measured on the device.** The Simulator ran the real game (the title demo's track message starts track 2) and a
+> test driver that played PCM and ADPCM tracks, paused, resumed, looped, ended a once-only track, silenced the volume and
+> suspended; all behaved as above. The audio itself was not listened to, and neither the memory the player's buffer takes
+> nor an underrun during a level load were looked at on a Playdate.
 
 ---
 

@@ -1,6 +1,6 @@
 # QuakeC virtual machine
 
-[← Documentation index](../README.md)
+[← Documentation index](../README.md) · [Source index](../source-index.md)
 
 Quake's *game rules* (monsters, weapons, doors, items, scoring) are not written in C. They are in a QuakeC program, `progs.dat`,
 compiled to bytecode and run by a small virtual machine inside the engine. The C side only provides entities (*edicts*), physics and

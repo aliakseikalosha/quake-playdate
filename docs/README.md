@@ -4,6 +4,7 @@ This folder describes **every source file** of the project with its purpose, its
 examples taken from (or written against) the real code. The project is a [WinQuake](https://github.com/id-Software/Quake) port for the
 [Playdate](https://play.date/) handheld, derived from [sysprog21/quake-embedded](https://github.com/sysprog21/quake-embedded).
 For *using* the game (controls, options, building, benchmark results) see the project [README](../README.md).
+The **[Source code index](source-index.md)** lists every file of the repository in one place, with what it does, whether it is built, and a link to the section that describes it in detail.
 
 > **What "port changes" means here.** Where a page says *"Port changes"* it describes how the file differs from the **original WinQuake source**
 > (the first commit of this repository, `5288eee Imported original WinQuake GPL source`), found by diffing against it. Files with no such note differ from the original only in small ways
@@ -13,7 +14,9 @@ For *using* the game (controls, options, building, benchmark results) see the pr
 
 | If you want to… | Read |
 | --- | --- |
+| Find out what a file does, whether it is built, and where it is described | [Source code index](source-index.md) |
 | Build the game, understand the CMake options | [Build system](build-system.md) |
+| Use the shareware or the 2021 re-release `pak0.pak`, or find out why the controls or levels misbehave with one | [Game data](port/game-data.md) |
 | See how the engine is wired to the Playdate | [Shared platform layer](port/overview.md), then [Playdate board](port/playdate.md) |
 | Understand how a frame is drawn and shown on the 1-bit screen | [Playdate renderer](engine/renderer-pdr.md), [Playdate board → display.c](port/playdate.md#displayc) |
 | Understand the optimisation work | [Performance infrastructure](engine/perf-infrastructure.md), [Scripts and tools](tools.md) |
@@ -24,11 +27,11 @@ For *using* the game (controls, options, building, benchmark results) see the pr
 
 ```
                          ┌───────────────────────────────────────────────────────────────┐
-  Playdate OS ──events──►│ port/boards/playdate: main.c  display.c  fio.c  snd.c  pd_stdio.c │
+  Playdate OS ──events──►│ port/boards/playdate: main.c display.c fio.c snd.c cd_pd.c    │
                          └───────────────┬───────────────────────────────▲───────────────┘
                                          │ qembd_* hooks (include/quakembd.h)│
                          ┌───────────────▼───────────────────────────────┴───────────────┐
-                         │ port/: sys_port.c  vid_port.c  in_port.c  cd_null.c             │
+                         │ port/: sys_port.c  vid_port.c  in_port.c                      │
                          └───────────────┬───────────────────────────────────────────────┘
                                          │ Sys_*  VID_*  IN_*  CDAudio_*  S_*
 ┌────────────────────────────────────────▼─────────────────────────────────────────────────┐
@@ -49,20 +52,27 @@ One frame (single player), in `Host_Frame`: read buttons → run console command
 
 ## Documentation map
 
+### Index
+
+| Page | Covers |
+| --- | --- |
+| [Source code index](source-index.md) | Every file of the repository, grouped by directory and subsystem: what it does, whether it is built (and in which configuration), its size, and a link to its detailed section; an A-Z lookup |
+
 ### Build, platform and tools
 
 | Page | Covers |
 | --- | --- |
-| [Build system](build-system.md) | `CMakeLists.txt` (root, `winquake/`, `port/`), `platform.cmake` and every `PD_*` option, the Playdate board's CMake files, VS Code tasks |
-| [Shared platform layer](port/overview.md) | `include/quakembd.h`, `port/sys_port.c`, `vid_port.c`, `in_port.c`, `cd_null.c`, `fio/fio_posix.c` |
-| [Playdate board](port/playdate.md) | `main.c`, `display.c`, `bluenoise.h`, `fio.c`, `pd_stdio.c`, `pd_compat.h`, `pd_port.h`, `keyqueue.*`, `autofire.*`, `weapons.*`, `snd.c`, `pdprof.c`, `.gitignore` |
+| [Build system](build-system.md) | `CMakeLists.txt` (root, `winquake/`, `port/`), `platform.cmake` and every `PD_*` option, the Playdate board's CMake files (`pdx_*.cmake`, `toolchain.cmake`), VS Code tasks |
+| [Shared platform layer](port/overview.md) | `include/quakembd.h`, `port/sys_port.c`, `vid_port.c`, `in_port.c`, `cd_null.c` (host check only), `fio/fio_posix.c` |
+| [Game data](port/game-data.md) | The shareware and the re-release `pak0.pak`: the built-in `default.cfg`, unused cvars, `MOVETYPE_BOUNCEMISSILE`, the alias setup cache fix |
+| [Playdate board](port/playdate.md) | `main.c`, `display.c`, `bluenoise.h`, `fio.c`, `pd_stdio.c`, `pd_compat.h`, `pd_port.h`, `keyqueue.*`, `autofire.*`, `weapons.*`, `snd.c`, `cd_pd.c`, `pdprof.c`, `.gitignore` |
 | [Scripts and tools](tools.md) | `scripts/*` (release build, install, bench, report, blue noise) and `tools/hostcheck/*` |
 
 ### The engine (`winquake/`)
 
 | Page | Files |
 | --- | --- |
-| [Engine core](engine/core.md) | `quakedef.h`, `host.c`, `host_cmd.c`, `sys.h`, `common.h/.c`, `zone.h/.c`, `cvar.h/.c`, `cmd.h/.c`, `crc.h/.c`, `mathlib.h/.c`, `wad.h/.c`, `nonintel.c` |
+| [Engine core](engine/core.md) | `quakedef.h`, `host.c`, `host_cmd.c`, `sys.h`, `common.h/.c`, `zone.h/.c`, `cvar.h/.c`, `cmd.h/.c`, `defaultcfg.h`, `crc.h/.c`, `mathlib.h/.c`, `wad.h/.c`, `nonintel.c` |
 | [Platform interface headers](engine/platform-interfaces.md) | `vid.h`, `input.h`, `sound.h`, `cdaudio.h`; unused legacy headers `quakeasm.h`, `d_ifacea.h`, `block8.h`, `block16.h`, `vgamodes.h`, `resource.h` |
 | [Client](engine/client.md) | `client.h`, `protocol.h`, `cl_main.c`, `cl_parse.c`, `cl_input.c`, `cl_demo.c`, `cl_tent.c`, `view.h/.c`, `chase.c`, `keys.h/.c` |
 | [Screen, HUD, console and menus](engine/ui.md) | `screen.h/.c`, `draw.h/.c`, `sbar.h/.c`, `console.h/.c`, `menu.h/.c` |
@@ -80,7 +90,7 @@ One frame (single player), in `Host_Frame`: read buttons → run console command
 
 - **Removed boards:** the upstream desktop, RISC-V and STM32 boards, their `lib/minifb` submodule and the files only they used were removed from the tree (see [Removed boards](build-system.md#removed-boards)); they are in the git history.
 - Generated or local directories: `build-*/`, `bench-results/`, `tools/hostcheck/out/` (all git-ignored).
-- `port/boards/playdate/Source/id1/pak0.pak`: the game data, not part of the source tree.
+- `port/boards/playdate/Source/id1/pak0.pak`: the game data, not part of the source tree (what the engine needs from it: [Game data](port/game-data.md)).
 
 ## Which renderer is built?
 
@@ -101,4 +111,5 @@ Both render at half resolution into a buffer the Playdate display layer dithers 
 - **Code blocks** are either real excerpts (usually abridged with `...`) or, when marked as such, short illustrations written against the real API.
 - **Cvars** are shown as `name` (default; *archived* means saved in `config.cfg`).
 - Function and type names are exactly as in the source; hundreds of tiny functions (for example every `PF_*` builtin) are summarised in groups rather than listed one by one.
-- The pages describe the tree as of this writing, **including the staged, not-yet-committed changes** (the blue-noise and diffusion dithering modes, the *Show FPS* default).
+- The pages describe the tree as of this writing, **including the staged, not-yet-committed changes** (the blue-noise and diffusion dithering modes, the *Show FPS* default, CD music and the *Music* option, the built-in `default.cfg`).
+- The [Source code index](source-index.md) lists every file of the repository; when a file is added, removed or renamed, add, remove or rename its row there as well as its section on the page that covers it.

@@ -358,6 +358,12 @@ int eventHandler(PlaydateAPI *playdate, PDSystemEvent event, uint32_t arg)
 	if (event == kEventPause)
 		rebuild_weapon_item();
 
+	/* Music is a system-side stream: nothing stops it while the game does not run */
+	if (event == kEventPause || event == kEventLock)
+		qembd_cd_suspend(1);
+	if (event == kEventResume || event == kEventUnlock)
+		qembd_cd_suspend(0);
+
 	/* Interlaced rendering leaves unchanged rows alone: redraw them all after the system screens */
 	if (event == kEventResume || event == kEventUnlock)
 		qembd_display_invalidate();

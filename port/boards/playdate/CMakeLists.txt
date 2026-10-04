@@ -10,6 +10,7 @@ set(PD_SOURCES
 	fio.c
 	pd_stdio.c
 	snd.c
+	cd_pd.c
 )
 
 if(PD_PROFILE)
@@ -41,6 +42,15 @@ add_custom_command(
 		-DSOURCE=${CMAKE_CURRENT_LIST_DIR}/Source/pdxinfo
 		-DCOUNTER=${CMAKE_CURRENT_LIST_DIR}/.build_number
 		-P ${CMAKE_CURRENT_LIST_DIR}/pdx_buildnumber.cmake
+	VERBATIM
+)
+
+# Which pak0.pak the .pdx carries: pak0_demo.pak in a release build, never pak0_demo.pak otherwise
+# (pdx_pak.cmake).
+add_custom_command(
+	TARGET ${_pd_target} POST_BUILD
+	COMMAND ${CMAKE_COMMAND} -DPDX=${PRODUCT_DIR}/${_pd_target}.pdx -DRELEASE=${PD_RELEASE}
+		-P ${CMAKE_CURRENT_LIST_DIR}/pdx_pak.cmake
 	VERBATIM
 )
 

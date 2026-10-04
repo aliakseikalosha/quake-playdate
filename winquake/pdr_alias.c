@@ -299,8 +299,15 @@ static void SetupModelCached (entity_t *e, asetup_t *a)
 	{
 		if (asetup_ent[i] == e)
 		{
-			*a = asetup_saved[i];
-			return;
+			// The saved setup points into the model's cache entry, and loading another model
+			// since (a full cache, as in the larger retail levels) may have evicted it:
+			// Mod_Extradata gives the model back, wherever it is now.
+			if (Mod_Extradata (e->model) == (void *)asetup_saved[i].hdr)
+			{
+				*a = asetup_saved[i];
+				return;
+			}
+			break;
 		}
 	}
 	SetupModel (e, a);

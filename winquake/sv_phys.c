@@ -1291,6 +1291,7 @@ void SV_Physics_Toss (edict_t *ent)
 
 // add gravity
 	if (ent->v.movetype != MOVETYPE_FLY
+	&& ent->v.movetype != MOVETYPE_BOUNCEMISSILE
 	&& ent->v.movetype != MOVETYPE_FLYMISSILE)
 		SV_AddGravity (ent);
 #endif
@@ -1314,10 +1315,8 @@ void SV_Physics_Toss (edict_t *ent)
 	
 	if (ent->v.movetype == MOVETYPE_BOUNCE)
 		backoff = 1.5f;
-#ifdef QUAKE2
 	else if (ent->v.movetype == MOVETYPE_BOUNCEMISSILE)
-		backoff = 2.0;
-#endif
+		backoff = 2.0f;
 	else
 		backoff = 1;
 
@@ -1326,11 +1325,7 @@ void SV_Physics_Toss (edict_t *ent)
 // stop if on ground
 	if (trace.plane.normal[2] > 0.7f)
 	{		
-#ifdef QUAKE2
 		if (ent->v.velocity[2] < 60 || (ent->v.movetype != MOVETYPE_BOUNCE && ent->v.movetype != MOVETYPE_BOUNCEMISSILE))
-#else
-		if (ent->v.velocity[2] < 60 || ent->v.movetype != MOVETYPE_BOUNCE)
-#endif
 		{
 			ent->v.flags = (int)ent->v.flags | FL_ONGROUND;
 			ent->v.groundentity = EDICT_TO_PROG(trace.ent);
@@ -1550,9 +1545,7 @@ void SV_Physics (void)
 			SV_Physics_Step (ent);
 		else if (ent->v.movetype == MOVETYPE_TOSS 
 		|| ent->v.movetype == MOVETYPE_BOUNCE
-#ifdef QUAKE2
 		|| ent->v.movetype == MOVETYPE_BOUNCEMISSILE
-#endif
 		|| ent->v.movetype == MOVETYPE_FLY
 		|| ent->v.movetype == MOVETYPE_FLYMISSILE)
 			SV_Physics_Toss (ent);

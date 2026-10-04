@@ -1,6 +1,6 @@
 # Shared platform layer
 
-[← Documentation index](../README.md)
+[← Documentation index](../README.md) · [Source index](../source-index.md)
 
 Quake expects an operating system. This port replaces it with two small layers:
 
@@ -31,7 +31,7 @@ Files covered here:
 | [`port/sys_port.c`](#portsys_portc) | `Sys_*`, start-up and the frame loop |
 | [`port/vid_port.c`](#portvid_portc) | `VID_*`, glue to `qembd_fillrect` |
 | [`port/in_port.c`](#portin_portc) | `IN_*` (mouse look) |
-| [`port/cd_null.c`](#portcd_nullc) | `CDAudio_*` as no-ops |
+| [`port/cd_null.c`](#portcd_nullc) | `CDAudio_*` as no-ops (not in the Playdate build; the host check uses it) |
 | [`port/fio/fio_posix.c`](#portfiofio_posixc) | `Sys_File*` on POSIX (used by the host check) |
 
 ---
@@ -251,7 +251,8 @@ Keyboard events never go through this file; they arrive via `Sys_SendKeyEvents`.
 ## `port/cd_null.c`
 
 The `CDAudio_*` interface (`Play`, `Stop`, `Pause`, `Resume`, `Update`, `Shutdown`) as empty
-functions; `CDAudio_Init` returns `0`. Quake's CD music is not supported anywhere in this port.
+functions; `CDAudio_Init` returns `0`. The Playdate game does not link it: its music is
+[`port/boards/playdate/cd_pd.c`](playdate.md#cd_pdc). `tools/hostcheck/build.sh` compiles it, so the host check runs without music.
 
 ## `port/fio/fio_posix.c`
 

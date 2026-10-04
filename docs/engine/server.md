@@ -1,6 +1,6 @@
 # Server, world and physics
 
-[← Documentation index](../README.md)
+[← Documentation index](../README.md) · [Source index](../source-index.md)
 
 The server owns the game: it loads a level, runs the entities (through the [QuakeC VM](quakec.md)), moves them with
 Quake's physics, and tells every client what changed. In single player there is one local client, connected through the
@@ -58,7 +58,7 @@ Constant groups used by both C and QuakeC:
 
 | Group | Values |
 | --- | --- |
-| `MOVETYPE_*` | `NONE`, `ANGLENOCLIP`, `ANGLECLIP`, `WALK`, `STEP`, `FLY`, `TOSS`, `PUSH`, `NOCLIP`, `FLYMISSILE`, `BOUNCE` |
+| `MOVETYPE_*` | `NONE`, `ANGLENOCLIP`, `ANGLECLIP`, `WALK`, `STEP`, `FLY`, `TOSS`, `PUSH`, `NOCLIP`, `FLYMISSILE`, `BOUNCE`, `BOUNCEMISSILE` (11; defined outside `#ifdef QUAKE2` by this port, `FOLLOW` (12) still needs `QUAKE2`) |
 | `SOLID_*` | `NOT`, `TRIGGER`, `BBOX`, `SLIDEBOX`, `BSP` |
 | `FL_*` flags | `FLY`, `SWIM`, `CLIENT`, `INWATER`, `MONSTER`, `GODMODE`, `NOTARGET`, `ITEM`, `ONGROUND`, `PARTIALGROUND`, `WATERJUMP`, `JUMPRELEASED` |
 | `EF_*` effects | `BRIGHTFIELD`, `MUZZLEFLASH`, `BRIGHTLIGHT`, `DIMLIGHT` |
@@ -144,7 +144,23 @@ Per-entity physics. `SV_Physics()` first runs QuakeC `StartFrame`, then loops ov
 | `MOVETYPE_NONE` | `SV_Physics_None` (just run its think) |
 | `MOVETYPE_NOCLIP` | `SV_Physics_Noclip` |
 | `MOVETYPE_STEP` | `SV_Physics_Step`: monsters, with gravity |
-| `MOVETYPE_TOSS`, `BOUNCE`, `FLY`, `FLYMISSILE` | `SV_Physics_Toss`: projectiles, items, gibs |
+| `MOVETYPE_TOSS`, `BOUNCE`, `BOUNCEMISSILE`, `FLY`, `FLYMISSILE` | `SV_Physics_Toss`: projectiles, items, gibs |
+
+**`MOVETYPE_BOUNCEMISSILE` (port change).** The 2021 re-release's `progs.dat` throws gibs with movetype 11, "bounce without gravity".
+The original engine only knows it under `#ifdef QUAKE2`, so an unknown movetype ended in `Sys_Error ("SV_Physics: bad movetype 11")`.
+This port handles it in `SV_Physics_Toss` without enabling the rest of `QUAKE2` (see [Game data](../port/game-data.md#4-sv_physics-bad-movetype-11-gibs)):
+
+```c
+// SV_Physics_Toss
+if (ent->v.movetype != MOVETYPE_FLY
+&& ent->v.movetype != MOVETYPE_BOUNCEMISSILE      // no gravity
+&& ent->v.movetype != MOVETYPE_FLYMISSILE)
+	SV_AddGravity (ent);
+...
+if (ent->v.movetype == MOVETYPE_BOUNCE)             backoff = 1.5f;
+else if (ent->v.movetype == MOVETYPE_BOUNCEMISSILE) backoff = 2.0f;   // bounces back harder
+else                                                backoff = 1;
+```
 
 For a player, `SV_Physics_Client` handles `NONE`, `WALK` (gravity, `SV_CheckStuck`, then `SV_WalkMove`, which steps up stairs), `TOSS`/`BOUNCE`, `FLY` and `NOCLIP`.
 

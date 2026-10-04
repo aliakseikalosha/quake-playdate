@@ -85,6 +85,12 @@ cvar_t	pausable = {"pausable","1"};
 
 cvar_t	temp1 = {"temp1","0"};
 
+// Set by the 2021 re-release's pak0.pak (campaign by its progs.dat on every level, scr_usekfont by its
+// quake.rc) and used by nothing here; registered so that they are not reported again and again
+// ("Cvar_Set: variable campaign not found" every frame, "Unknown command").
+static cvar_t	campaign = {"campaign","0"};
+static cvar_t	scr_usekfont = {"scr_usekfont","0"};
+
 
 /*
 ================
@@ -210,6 +216,8 @@ void Host_InitLocal (void)
 	Cvar_RegisterVariable (&pausable);
 
 	Cvar_RegisterVariable (&temp1);
+	Cvar_RegisterVariable (&campaign);
+	Cvar_RegisterVariable (&scr_usekfont);
 
 	Host_FindMaxClients ();
 	

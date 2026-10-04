@@ -16,6 +16,10 @@ const char *pdq_path(const char *path, char *out, size_t size);
 /* Create every directory leading up to the file in path (in the Data folder) */
 void pdq_mkdirs(const char *path);
 
+/* The system menu or lock screen took over the device (true) or gave it back (false): music
+ * pauses meanwhile (cd_pd.c) */
+void qembd_cd_suspend(int suspend);
+
 /* The system drew over the LCD frame buffer: redraw every row (display.c) */
 void qembd_display_invalidate(void);
 

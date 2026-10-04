@@ -1,6 +1,6 @@
 # Build system
 
-[← Documentation index](README.md)
+[← Documentation index](README.md) · [Source index](source-index.md)
 
 The project is built with CMake. Three CMake files form the skeleton and the board
 directory (`port/boards/playdate`, the only board in the tree) is pulled in by name:
@@ -98,7 +98,7 @@ Things worth knowing:
 ## `port/CMakeLists.txt`: shared platform layer
 
 ```cmake
-add_library(port OBJECT in_port.c cd_null.c sys_port.c vid_port.c)
+add_library(port OBJECT in_port.c sys_port.c vid_port.c)
 
 target_include_directories(port PUBLIC
 	${PROJECT_SOURCE_DIR}/include
@@ -182,7 +182,7 @@ cmake -DCMAKE_TOOLCHAIN_FILE=../port/boards/playdate/toolchain.cmake -DBOARD_NAM
 [`port/boards/playdate/CMakeLists.txt`](../port/boards/playdate/CMakeLists.txt):
 
 ```cmake
-set(PD_SOURCES main.c keyqueue.c autofire.c weapons.c display.c fio.c pd_stdio.c snd.c)
+set(PD_SOURCES main.c keyqueue.c autofire.c weapons.c display.c fio.c pd_stdio.c snd.c cd_pd.c)
 if(PD_PROFILE)
 	list(APPEND PD_SOURCES pdprof.c)
 endif()
@@ -227,6 +227,9 @@ scripts/release-device.sh        # or the VS Code task "Playdate: release build 
 A clean Release build of the device `.pdx` in `build-release/` (no profiler or benchmark), with a new build number: the number appears in the built `pdxinfo`
 and is also written to `Source/pdxinfo`, so the release is recorded in the source tree. Details in [Scripts and tools](tools.md#scriptsrelease-devicesh).
 
+The script configures with `-DPD_RELEASE=ON`, which makes the release ship the shareware data (see [`Source/`](#source) below).
+`CMAKE_BUILD_TYPE` cannot decide that: `platform.cmake` defaults it to Release, so an ordinary build is a Release build too.
+
 ### `toolchain.cmake`
 
 [`toolchain.cmake`](../port/boards/playdate/toolchain.cmake) only locates the SDK and includes
@@ -238,6 +241,8 @@ the SDK's own `C_API/buildsupport/arm.cmake`. Omit it and you get the Simulator 
 | --- | --- |
 | `Source/pdxinfo` | Game metadata: `name`, `author`, `bundleID`, `version`, `buildNumber`. |
 | `Source/id1/pak0.pak` | Quake game data. **Not in git** and not redistributable; copy your own (the shareware one is fine). |
+| `Source/id1/music/Quake02.wav` ... `Quake11.wav` | Optional: the music (CD tracks 2-11), see [`cd_pd.c`](port/playdate.md#cd_pdc). `pdc` turns them into `.pda`; the re-release's ten tracks are about 590 MB as PCM and about 150 MB as ADPCM (use ADPCM). |
+| `Source/id1/pak0_demo.pak` | Optional: the shareware `pak0.pak` under another name. With `-DPD_RELEASE=ON` (`scripts/release-device.sh`) the built `.pdx` gets it as `id1/pak0.pak`, replacing `pak0.pak`; in every other build it is left out of the `.pdx`. |
 | `Source/pdex.elf` etc. | Build products copied in by `playdate_game.cmake` (git-ignored). |
 
 `DOS-CONFIG.CFG.bak` in the same directory is a stray backup of a DOS-era Quake config file
@@ -245,6 +250,22 @@ and is not used by the build.
 
 [`port/boards/playdate/.gitignore`](../port/boards/playdate/.gitignore) keeps the generated and non-redistributable
 files out of git: `Source/pdex.*` (build products), `Source/id1/` (the game data) and `.build_number`.
+
+### Which pak0.pak the `.pdx` gets
+
+`pdc` bundles all of `Source/`, so a `.pdx` would carry both `id1/pak0.pak` and `id1/pak0_demo.pak`.
+[`pdx_pak.cmake`](../port/boards/playdate/pdx_pak.cmake) runs after `pdc` (a `POST_BUILD` step of the game target, device and simulator)
+and works on the built `.pdx` only; `Source/id1/` is never touched:
+
+| Build | `pak0_demo.pak` exists | In the `.pdx` |
+| --- | --- | --- |
+| `PD_RELEASE=ON` | yes | `id1/pak0.pak` is `pak0_demo.pak`; there is no `pak0_demo.pak` and no `id1/music` |
+| `PD_RELEASE=ON` | no | `id1/pak0.pak` and `id1/music` as in `Source/id1/` |
+| `PD_RELEASE=OFF` (default) | either | `id1/pak0.pak` as in `Source/id1/`; `pak0_demo.pak` is deleted from the `.pdx` |
+
+```shell
+cmake -DPDX=build-release/quake_DEVICE.pdx -DRELEASE=ON -P port/boards/playdate/pdx_pak.cmake   # by hand, on a built .pdx
+```
 
 ## Removed boards
 

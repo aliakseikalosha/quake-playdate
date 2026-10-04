@@ -1,6 +1,6 @@
 # The Playdate renderer (`pdr_*`)
 
-[← Documentation index](../README.md)
+[← Documentation index](../README.md) · [Source index](../source-index.md)
 
 `PD_NEW_RENDERER` (default **ON**) builds a replacement for Quake's software refresh, written
 for the Playdate's memory system. It draws the same things as the original, uses the same cvars and
@@ -15,7 +15,7 @@ instead, see [Original renderer](renderer-original.md).
 | [`pdr_world.c`](#pdr_worldc) | Brush data build, BSP walk, coverage mask, brush entities | 1734 |
 | [`pdr_span.c`](#pdr_spanc) | Textured, water and sky span drawing | 418 |
 | [`pdr_light.c`](#pdr_lightc) | Light blocks, light styles, dynamic lights, `LightPoint` | 542 |
-| [`pdr_alias.c`](#pdr_aliasc) | Alias models (monsters, items, the weapon) | 854 |
+| [`pdr_alias.c`](#pdr_aliasc) | Alias models (monsters, items, the weapon) | 861 |
 | [`pdr_sprite.c`](#pdr_spritec) | Sprites and particles | 535 |
 | [`pdr_lowres.c`](#pdr_lowresc) | Hand-over of the half-resolution view to the display | 111 |
 
@@ -390,6 +390,25 @@ if (PD_StackRoom (am->numverts * sizeof(avert_t) + 1536)) {
   `SetupFrameVerts`, `SetupSkin`) so the transform computed for the bounding-box/rectangle test
   is reused by the draw; `PDR_ResetAliasSetups` empties that cache at the start of entity set-up
   each frame.
+- **A cached setup must be re-validated.** The saved `asetup_t` holds pointers into the model's *cache* entry
+  (`hdr`, `pmdl`, `frame`), and setting up another model between `PDR_AliasRect` and `PDR_DrawAliasModel` can evict it
+  (a level with many monster types in the 7 MB heap, such as the re-release's `e2m6`). `SetupModelCached` therefore
+  asks `Mod_Extradata` again and reuses the saved setup only if the model is where it was; otherwise it redoes `SetupModel`
+  (see [Game data](../port/game-data.md#5-crash-in-the-playdate-renderer-on-large-levels-setupmodelcached)):
+
+```c
+if (asetup_ent[i] == e)
+{
+	if (Mod_Extradata (e->model) == (void *)asetup_saved[i].hdr)
+	{
+		*a = asetup_saved[i];      // still in place: same result as before
+		return;
+	}
+	break;                         // evicted or moved: set it up again below
+}
+...
+SetupModel (e, a);
+```
 
 | Function | Purpose |
 | --- | --- |

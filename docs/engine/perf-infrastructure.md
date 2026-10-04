@@ -1,6 +1,6 @@
 # Performance infrastructure (Playdate)
 
-[← Documentation index](../README.md)
+[← Documentation index](../README.md) · [Source index](../source-index.md)
 
 The Playdate's CPU is fast compared with its memory. The performance work in this fork is built on
 what was *measured* about that memory system, and a small set of headers, assembly files and

@@ -1,6 +1,6 @@
 # Scripts and tools
 
-[← Documentation index](README.md)
+[← Documentation index](README.md) · [Source index](source-index.md)
 
 Two directories hold the helper programs:
 
@@ -34,13 +34,15 @@ BUILD_DIR=build-foo scripts/release-device.sh
 Steps:
 
 1. Removes the build directory (`build-release`, git-ignored) and the stale `Source/pdex.*` files that `pdc` would bundle, so everything is rebuilt and the post-build step that hands out the build number always runs.
-2. Configures a Release device build (`-DCMAKE_BUILD_TYPE=Release -DPD_PROFILE=OFF -DPD_BENCH=OFF`, with the SDK's ARM toolchain) and builds it with all cores.
-3. Reads the build number the build wrote into the `.pdx`'s `pdxinfo` ([`pdx_buildnumber.cmake`](build-system.md#playdate-board-cmakeliststxt): one more than the larger of `.build_number` and the `buildNumber` in `Source/pdxinfo`) and checks it went up. If it did not, the script stops with an error.
-4. Writes that number into `port/boards/playdate/Source/pdxinfo`, so the release's number is recorded in the source tree (a tracked file: commit it with the release) and the next build counts on from it. Nothing else in `Source/pdxinfo` is changed (to change the `version=` line, edit it by hand).
+2. Configures a Release device build (`-DCMAKE_BUILD_TYPE=Release -DPD_RELEASE=ON -DPD_PROFILE=OFF -DPD_BENCH=OFF`, with the SDK's ARM toolchain) and builds it with all cores.
+3. Ships the shareware data: when `port/boards/playdate/Source/id1/pak0_demo.pak` exists, the `.pdx` gets it as `id1/pak0.pak` instead of `pak0.pak` (`-DPD_RELEASE=ON`, [`pdx_pak.cmake`](build-system.md#which-pak0pak-the-pdx-gets); every other build leaves `pak0_demo.pak` out of its `.pdx`). The script checks the two files are identical and stops if not. Without a `pak0_demo.pak` the release keeps `pak0.pak`.
+4. Reads the build number the build wrote into the `.pdx`'s `pdxinfo` ([`pdx_buildnumber.cmake`](build-system.md#playdate-board-cmakeliststxt): one more than the larger of `.build_number` and the `buildNumber` in `Source/pdxinfo`) and checks it went up. If it did not, the script stops with an error.
+5. Writes that number into `port/boards/playdate/Source/pdxinfo`, so the release's number is recorded in the source tree (a tracked file: commit it with the release) and the next build counts on from it. Nothing else in `Source/pdxinfo` is changed (to change the `version=` line, edit it by hand).
 
 ```
 Release build done: build-release/quake_DEVICE.pdx
   version 0.3, build number 88 -> 89 (also written to port/boards/playdate/Source/pdxinfo)
+  game data: id1/pak0.pak is pak0_demo.pak
 ```
 
 Run twice, it goes 89 → 90: every release gets its own number. The built `pdxinfo` and `Source/pdxinfo` then agree; an ordinary build (`build-dev`, simulator) only changes the built `pdxinfo`, never `Source/pdxinfo`.
@@ -143,10 +145,11 @@ Host-side checks for the Playdate port. It links the real engine (`winquake/*.c`
 | --- | --- | --- |
 | *(none)* | default | Scripted play: load e1m1, walk, FPS counter, notify lines, console, every menu, view sizes, pause, FOV, weapons, scoreboard, crosshair, then demo1–3, then switch the dithering mode while playing. On every screen update it checks two invariants (below). Exit status 1 if either fails. |
 | `HGOLD=<file>` | golden | Plays demo1–3 with `timedemo` and writes one hash of the 1-bit LCD image per frame, plus hashes of the 8-bit render buffer and z buffer. |
-| `HMENU=1` | menu | Sends keys through the Options menu and checks what it does and saves. |
+| `HMENU=1` | menu | Sends keys through the Options menu (crank speed, music, texture detail, interlaced, dithering, draw distance, max framerate, show FPS) and checks what it does and saves. |
+| `HINPUT=1` | input | Checks the key bindings the port relies on (arrow keys, ctrl, space, `,` and `.`) exist and move, turn, fire and jump the player in e1m1, and survive `exec default.cfg`. Fails if the pak has no `default.cfg` and the built-in one (`winquake/defaultcfg.h`) is missing. |
 | `HFRAMES=<prefix>` | frames | Plays a demo in real time and writes the LCD as `<prefix>-NNNN.pbm`. `HDEMO`, `HSKIP`, `HEVERY` (default 2), `HCOUNT` tune it. Used to make `docs/demo.gif`. |
 | `HSHOTS=<dir>` | shots | Plays the demos and writes every `HEVERY`-th (default 25) frame's 3D view (`dD_NNNN.ppm`) and LCD picture. `HDEMOS="1 2 3"` picks demos. |
-| `HMAPS=1` | maps | Loads every shareware map and turns, walks and fires in each: a crash and limits check. |
+| `HMAPS=1` | maps | Loads every shareware map (`start`, `e1m1`–`e1m8`) and turns, walks and fires in each: a crash and limits check. |
 | `HINTERLACE=1` | modifier | Any mode above with `r_interlace 1`. |
 | `HCMD="…"` | modifier | Console commands before any mode (e.g. `HCMD="pd_dither 2"`). |
 | `HLOG=1` | modifier | Print engine log lines. |
@@ -192,12 +195,48 @@ symbols with `-D` so they can coexist, and generating `display_old.c` with a sma
 and links everything with `-lm`. Defaults: `-O1 -g`, 400×240, `PD_LOWRES_3D`, and a generous
 `PD_STACK_BUDGET` (64 KiB) because the host's stack frames are larger.
 
+### The input test (`HINPUT=1`)
+
+`input_test()` checks that the keys the port sends are bound, and that they move the player. It presses the same keys
+[`poll_input`](port/playdate.md#input-mapping) pushes (`Key_Event`), so it also fails when the pak has no `default.cfg` and the
+[built-in one](engine/core.md#built-in-defaultcfg-defaultcfgh) is missing:
+
+```c
+run(3);		/* quake.rc (and so default.cfg) is executed by the first frames */
+MCHECK(!strcmp(binding(K_UPARROW), "+forward"), "UPARROW is +forward");
+MCHECK(!strcmp(binding(K_CTRL),    "+attack"),  "CTRL is +attack");
+...
+cmd("map e1m1\n");
+run(80);
+AngleVectors(cl.viewangles, fwd, right, up);
+VectorCopy(sv_player->v.origin, from);
+Key_Event(K_UPARROW, true);  run(20);  Key_Event(K_UPARROW, false);  run(10);
+MCHECK(moved(from, fwd) > 50, "holding UP walks forward");   /* DOWN, ',' and '.' likewise (< -50, strafe) */
+
+yaw = cl.viewangles[YAW];
+Key_Event(K_LEFTARROW, true);  run(10);  Key_Event(K_LEFTARROW, false);  run(2);
+MCHECK(cl.viewangles[YAW] > yaw + 10, "holding LEFT turns left");
+
+Key_Event(K_CTRL, true);  run(3);
+MCHECK(sv_player->v.button0 != 0, "A (ctrl) fires");           /* K_SPACE: v.button2, "B jumps" */
+
+/* "Reset defaults" runs default.cfg again: the bindings must survive it */
+cmd("unbindall\nexec default.cfg\n");
+```
+
+Against the original engine and the re-release pak every check fails; with the built-in `default.cfg` all pass, with the
+re-release and with the shareware pak. It exits 1 on any failure and prints `input test passed` otherwise.
+To look at everything the console prints with a given pak (the way the re-release's `campaign` spam was found):
+`cd tools/hostcheck/out/run && HLOG=1 ../hostcheck 200 | sort | uniq -c | sort -rn | head`.
+See [Game data](port/game-data.md#checking-a-pak).
+
 ## `tools/hostcheck/run.sh`
 
 ```shell
 tools/hostcheck/run.sh [frames]               # build, set up the run directory, run default mode
 HGOLD=file tools/hostcheck/run.sh             # golden mode
 HMENU=1 tools/hostcheck/run.sh                # menu test
+HINPUT=1 tools/hostcheck/run.sh               # key bindings and movement test
 HINTERLACE=1 tools/hostcheck/run.sh           # any of the above with interlaced rendering
 NEW=1 tools/hostcheck/run.sh                  # …with the new renderer
 ```

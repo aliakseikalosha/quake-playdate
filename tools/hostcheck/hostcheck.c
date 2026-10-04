@@ -258,7 +258,7 @@ static int golden(const char *path)
 
 /*
  * HMENU=1: the options menu. Presses real keys (Key_Event) and checks navigation, the Crank speed
- * (crank_speed), Texture detail (d_mipcap), Interlaced (r_interlace), Dithering (pd_dither), Draw
+ * (crank_speed), Music (bgmenabled), Texture detail (d_mipcap), Interlaced (r_interlace), Dithering (pd_dither), Draw
  * distance (r_maxdist) and Show FPS (scr_showfps) rows, that leaving the menu writes config.cfg with the archived cvars but no key
  * bindings, that the file reloads, and that "Reset to defaults" puts the option back.
  */
@@ -267,6 +267,7 @@ extern cvar_t d_mipcap;
 extern cvar_t r_interlace;
 extern cvar_t r_maxdist;
 extern cvar_t crank_speed;
+extern cvar_t bgmenabled;
 extern cvar_t pd_maxfps;
 extern cvar_t pd_dither;
 #include <menu.h>
@@ -511,9 +512,20 @@ static int menu_test(void)
 	press(K_LEFTARROW);
 	MCHECK(crank_speed.value == 2.6f, "left twice: 2.6");
 
+	press(K_DOWNARROW);
+	MCHECK(options_cursor == 3, "down reaches the Music row");
+	MCHECK(bgmenabled.value == 1, "music starts on");
+	dump_lcd("options-music");
+	press(K_RIGHTARROW);
+	MCHECK(bgmenabled.value == 0, "right: music off");
+	press(K_LEFTARROW);
+	MCHECK(bgmenabled.value == 1, "left: music on again");
+	press(K_ENTER);
+	MCHECK(bgmenabled.value == 0, "enter toggles too (what the file below saves)");
+
 	for (i = 0; i < 5; i++)
 		press(K_DOWNARROW);
-	MCHECK(options_cursor == 7, "5 more down reach the Texture detail row");
+	MCHECK(options_cursor == 8, "5 more down reach the Texture detail row");
 	MCHECK(d_mipcap.value == 1, "texture detail starts on low (d_mipcap 1)");
 
 	dump_lcd("low");
@@ -527,7 +539,7 @@ static int menu_test(void)
 	MCHECK(d_mipcap.value == 0, "enter toggles too");
 
 	press(K_DOWNARROW);
-	MCHECK(options_cursor == 8, "down reaches the Interlaced row");
+	MCHECK(options_cursor == 9, "down reaches the Interlaced row");
 	MCHECK(r_interlace.value == 1, "interlaced starts on");
 	dump_lcd("interlace-on");
 	press(K_RIGHTARROW);
@@ -539,7 +551,7 @@ static int menu_test(void)
 	MCHECK(r_interlace.value == 0, "enter toggles too");
 
 	press(K_DOWNARROW);
-	MCHECK(options_cursor == 9, "down reaches the Dithering row");
+	MCHECK(options_cursor == 10, "down reaches the Dithering row");
 	MCHECK(pd_dither.value == 0, "dithering starts on patterns (pd_dither 0)");
 	dump_lcd("dither-patterns");
 	press(K_RIGHTARROW);
@@ -561,7 +573,7 @@ static int menu_test(void)
 	MCHECK(pd_dither.value == 1, "right: bayer (what the file below saves)");
 
 	press(K_DOWNARROW);
-	MCHECK(options_cursor == 10, "down reaches the Draw distance row");
+	MCHECK(options_cursor == 11, "down reaches the Draw distance row");
 	dump_lcd("options-bottom");
 	MCHECK(r_maxdist.value == 512, "draw distance starts at 512");
 	press(K_RIGHTARROW);
@@ -580,7 +592,7 @@ static int menu_test(void)
 	MCHECK(r_maxdist.value == 768, "right x3: 768");
 
 	press(K_DOWNARROW);
-	MCHECK(options_cursor == 11, "down reaches the Max framerate row");
+	MCHECK(options_cursor == 12, "down reaches the Max framerate row");
 	MCHECK(pd_maxfps.value == 30, "max framerate starts at 30");
 	press(K_LEFTARROW);
 	MCHECK(pd_maxfps.value == 30, "left at 30 stays 30");
@@ -595,7 +607,7 @@ static int menu_test(void)
 	MCHECK(pd_maxfps.value == 50, "left: 50");
 
 	press(K_DOWNARROW);
-	MCHECK(options_cursor == 12, "down reaches the Show FPS row");
+	MCHECK(options_cursor == 13, "down reaches the Show FPS row");
 	MCHECK(scr_showfps.value == 1, "show fps starts on");
 	dump_lcd("options-showfps");
 	press(K_RIGHTARROW);
@@ -608,7 +620,7 @@ static int menu_test(void)
 	press(K_DOWNARROW);
 	MCHECK(options_cursor == 0, "down from the last row wraps to the first (no Video Options row here)");
 	press(K_UPARROW);
-	MCHECK(options_cursor == 12, "up from the first row lands on Show FPS");
+	MCHECK(options_cursor == 13, "up from the first row lands on Show FPS");
 
 	MCHECK(slurp(path) == NULL, "no config.cfg before leaving the menu");
 	press(K_ESCAPE);
@@ -622,6 +634,7 @@ static int menu_test(void)
 	MCHECK(cfg && strstr(cfg, "crank_speed \"2.6"), "config.cfg holds crank_speed 2.6");
 	MCHECK(cfg && strstr(cfg, "pd_maxfps \"50"), "config.cfg holds pd_maxfps 50");
 	MCHECK(cfg && strstr(cfg, "scr_showfps \"0"), "config.cfg holds scr_showfps 0");
+	MCHECK(cfg && strstr(cfg, "bgmenabled \"0"), "config.cfg holds bgmenabled 0");
 	MCHECK(cfg && strstr(cfg, "cl_autofire"), "config.cfg holds the other archived options");
 	MCHECK(cfg && !strstr(cfg, "bind "), "config.cfg holds no key bindings");
 
@@ -632,6 +645,7 @@ static int menu_test(void)
 	Cvar_SetValue("crank_speed", 1);
 	Cvar_SetValue("pd_maxfps", 30);
 	Cvar_SetValue("scr_showfps", 1);
+	Cvar_SetValue("bgmenabled", 1);
 	cmd("exec config.cfg\n");
 	run(3);
 	MCHECK(d_mipcap.value == 0, "config.cfg restores d_mipcap 0 (what the next launch does)");
@@ -641,6 +655,7 @@ static int menu_test(void)
 	MCHECK(crank_speed.value == 2.6f, "config.cfg restores crank_speed 2.6");
 	MCHECK(pd_maxfps.value == 50, "config.cfg restores pd_maxfps 50");
 	MCHECK(scr_showfps.value == 0, "config.cfg restores scr_showfps 0");
+	MCHECK(bgmenabled.value == 0, "config.cfg restores bgmenabled 0");
 
 	/* Reset to defaults puts it back */
 	cmd("menu_options\n");
@@ -657,6 +672,7 @@ static int menu_test(void)
 	MCHECK(crank_speed.value == 1.4f, "reset to defaults sets crank speed back to 1.4");
 	MCHECK(pd_maxfps.value == 30, "reset to defaults sets max framerate back to 30");
 	MCHECK(scr_showfps.value == 1, "reset to defaults turns show fps on");
+	MCHECK(bgmenabled.value == 1, "reset to defaults turns music on");
 	press(K_ESCAPE);
 	cfg = slurp(path);
 	MCHECK(cfg && strstr(cfg, "d_mipcap \"1"), "and the saved file says so");
@@ -719,6 +735,115 @@ static int menu_test(void)
 	return menu_fail ? 1 : 0;
 }
 
+/*
+ * HINPUT=1: the key bindings the port relies on (D-pad = arrow keys, A = ctrl, B = space, crank-out
+ * strafe = "," and ".") exist and make the player move, whichever pak0.pak is used. The re-release's
+ * pak has no default.cfg; the engine's built-in one (winquake/defaultcfg.h) has to stand in for it.
+ */
+static const char *binding(int key)
+{
+	return keybindings[key] ? keybindings[key] : "";
+}
+
+/* how far the player has moved along dir since from */
+static float moved(const vec3_t from, const vec3_t dir)
+{
+	vec3_t d;
+
+	VectorSubtract(sv_player->v.origin, from, d);
+	return DotProduct(d, dir);
+}
+
+static int input_test(void)
+{
+	vec3_t fwd, right, up, from;
+	float yaw;
+
+	run(3);		/* quake.rc (and so default.cfg) is executed by the first frames */
+	MCHECK(!strcmp(binding(K_UPARROW), "+forward"), "UPARROW is +forward");
+	MCHECK(!strcmp(binding(K_DOWNARROW), "+back"), "DOWNARROW is +back");
+	MCHECK(!strcmp(binding(K_LEFTARROW), "+left"), "LEFTARROW is +left");
+	MCHECK(!strcmp(binding(K_RIGHTARROW), "+right"), "RIGHTARROW is +right");
+	MCHECK(!strcmp(binding(K_CTRL), "+attack"), "CTRL is +attack");
+	MCHECK(!strcmp(binding(K_SPACE), "+jump"), "SPACE is +jump");
+	MCHECK(!strcmp(binding(','), "+moveleft"), "comma is +moveleft");
+	MCHECK(!strcmp(binding('.'), "+moveright"), "period is +moveright");
+	MCHECK(!strcmp(binding(K_ESCAPE), "togglemenu"), "ESCAPE is togglemenu");
+	MCHECK(Cvar_FindVar("campaign") && Cvar_FindVar("scr_usekfont"),
+		   "the re-release's cvars (campaign, scr_usekfont) exist");
+
+	cmd("map e1m1\n");
+	run(80);
+	MCHECK(key_dest == key_game && cls.state == ca_connected && sv_player, "in a level");
+	AngleVectors(cl.viewangles, fwd, right, up);
+
+	VectorCopy(sv_player->v.origin, from);
+	Key_Event(K_UPARROW, true);
+	run(20);
+	Key_Event(K_UPARROW, false);
+	run(10);
+	MCHECK(moved(from, fwd) > 50, "holding UP walks forward");
+
+	AngleVectors(cl.viewangles, fwd, right, up);
+	VectorCopy(sv_player->v.origin, from);
+	Key_Event(K_DOWNARROW, true);
+	run(20);
+	Key_Event(K_DOWNARROW, false);
+	run(10);
+	MCHECK(moved(from, fwd) < -50, "holding DOWN walks back");
+
+	AngleVectors(cl.viewangles, fwd, right, up);
+	VectorCopy(sv_player->v.origin, from);
+	Key_Event(',', true);
+	run(20);
+	Key_Event(',', false);
+	run(10);
+	MCHECK(moved(from, right) < -50, "comma (crank out + LEFT) strafes left");
+
+	VectorCopy(sv_player->v.origin, from);
+	Key_Event('.', true);
+	run(20);
+	Key_Event('.', false);
+	run(10);
+	MCHECK(moved(from, right) > 50, "period (crank out + RIGHT) strafes right");
+
+	yaw = cl.viewangles[YAW];
+	Key_Event(K_LEFTARROW, true);
+	run(10);
+	Key_Event(K_LEFTARROW, false);
+	run(2);
+	MCHECK(cl.viewangles[YAW] > yaw + 10, "holding LEFT turns left");
+
+	yaw = cl.viewangles[YAW];
+	Key_Event(K_RIGHTARROW, true);
+	run(10);
+	Key_Event(K_RIGHTARROW, false);
+	run(2);
+	MCHECK(cl.viewangles[YAW] < yaw - 10, "holding RIGHT turns right");
+
+	Key_Event(K_CTRL, true);
+	run(3);
+	MCHECK(sv_player->v.button0 != 0, "A (ctrl) fires");
+	Key_Event(K_CTRL, false);
+	run(3);
+	MCHECK(sv_player->v.button0 == 0, "and releasing it stops");
+
+	Key_Event(K_SPACE, true);
+	run(3);
+	MCHECK(sv_player->v.button2 != 0, "B (space) jumps");
+	Key_Event(K_SPACE, false);
+	run(3);
+
+	/* "Reset defaults" runs default.cfg again: the bindings must survive it */
+	cmd("unbindall\nexec default.cfg\n");
+	run(2);
+	MCHECK(!strcmp(binding(K_UPARROW), "+forward") && !strcmp(binding('.'), "+moveright"),
+		   "exec default.cfg binds them again");
+
+	printf("%s\n", menu_fail ? "INPUT TEST FAILED" : "input test passed");
+	return menu_fail ? 1 : 0;
+}
+
 int main(int argc, char **argv)
 {
 	static char a0[] = "quake";
@@ -754,6 +879,8 @@ int main(int argc, char **argv)
 		return maps_mode();
 	if (getenv("HMENU"))
 		return menu_test();
+	if (getenv("HINPUT"))
+		return input_test();
 
 	/* scenario 1: a level, walking, then overlays and view sizes */
 	cur_scn = 1;

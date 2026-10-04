@@ -1,6 +1,6 @@
 # Client
 
-[← Documentation index](../README.md)
+[← Documentation index](../README.md) · [Source index](../source-index.md)
 
 The client turns *player intent* (keys, the crank) into movement commands, turns *server messages* into
 a picture of the world, and plays demos. In single player the "server" is in the same program, connected through a

@@ -1,6 +1,6 @@
 # Engine core
 
-[← Documentation index](../README.md)
+[← Documentation index](../README.md) · [Source index](../source-index.md)
 
 The foundation every other engine module stands on: start-up and the frame loop, memory, strings and
 files, console variables and commands, math, and the WAD file format. These files are classic id
@@ -16,7 +16,7 @@ the WinQuake source imported as the first commit of this repository.
 | [`common.h` / `common.c`](#commonh--commonc) | Buffers, message I/O, strings, file system, `.pak` loading |
 | [`zone.h` / `zone.c`](#zoneh--zonec) | Hunk, zone and cache memory |
 | [`cvar.h` / `cvar.c`](#cvarh--cvarc) | Console variables |
-| [`cmd.h` / `cmd.c`](#cmdh--cmdc) | Command buffer, tokenizer, aliases |
+| [`cmd.h` / `cmd.c`](#cmdh--cmdc), [`defaultcfg.h`](#built-in-defaultcfg-defaultcfgh) | Command buffer, tokenizer, aliases; the built-in `default.cfg` |
 | [`crc.h` / `crc.c`](#crch--crcc) | 16-bit CRC |
 | [`mathlib.h` / `mathlib.c`](#mathlibh--mathlibc) | Vectors, matrices, plane tests |
 | [`wad.h` / `wad.c`](#wadh--wadc) | WAD2 archive (`gfx.wad`) |
@@ -149,7 +149,8 @@ Frame timing is added by this port as `PROF_BEGIN(P_INPUT) … PROF_END(...)` pa
   when a value changes). The Playdate never runs `Host_Shutdown` (the game is stopped from the system menu), so
   the port calls `Host_SaveOptions` when the menu is left and from `eventHandler` on pause, lock and terminate.
 - With `QEMBD_PLAYDATE`, **key bindings are not written** (`Key_WriteBindings` is skipped): bindings come
-  from `default.cfg` and the port's own button mapping, and a saved copy would override future defaults.
+  from `default.cfg` (the pak's, or the [built-in one](#built-in-defaultcfg-defaultcfgh)) and the port's own
+  button mapping, and a saved copy would override future defaults.
 
 ```c
 // port/boards/playdate/main.c
@@ -162,6 +163,19 @@ if ((event == kEventPause || event == kEventLock || event == kEventTerminate) &&
 `host_framerate` and all dedicated-server (`-dedicated`) code paths were removed; `host_frametime` is a
 `float`; `pd_stack_top` (see [`pd_stack.h`](perf-infrastructure.md#pd_stackh)) is defined here; the
 `FPS_20` server stepping variant was removed.
+
+Two cvars are registered in `Host_InitLocal` that nothing reads: `campaign` and `scr_usekfont`. The 2021 re-release's
+`progs.dat` sets the first on every level and its `quake.rc` sets the second; unregistered, `Cvar_Set` printed
+`Cvar_Set: variable campaign not found` every frame. See [Game data](../port/game-data.md#2-console-spam-cvar_set-variable-campaign-not-found).
+
+```c
+static cvar_t	campaign = {"campaign","0"};
+static cvar_t	scr_usekfont = {"scr_usekfont","0"};
+...
+	Cvar_RegisterVariable (&temp1);
+	Cvar_RegisterVariable (&campaign);
+	Cvar_RegisterVariable (&scr_usekfont);
+```
 
 > **Note.** In `Host_FilterTime` the 0.001–0.1 s clamp is applied to `host_frametime` *before* it is
 > assigned the new value (`_new_host_frametime`), so it clamps the previous frame's time and the value used for
@@ -391,6 +405,9 @@ The command buffer and the command interpreter.
   `Cmd_ForwardToServer()` themselves when typed on a client that is not the server.
 - **Registering.** `Cmd_AddCommand("name", function)`.
 - **Built-in commands.** `exec <file>` (`Cmd_Exec_f`), `echo`, `alias`, `stuffcmds`, `wait`.
+- **Port changes to `exec`.** Two, both for the 2021 re-release's `pak0.pak` (see [Game data](../port/game-data.md)):
+  `exec default.cfg` falls back to a [built-in copy](#built-in-defaultcfg-defaultcfgh) when the pak has no such file, and
+  the file's text is followed by a newline so that a script without a final newline cannot swallow the next queued command.
 - **Sources.** `cmd_source` is `src_command` (console or key binding) or `src_client` (a client sent it over the net; commands may refuse).
 
 ```c
@@ -400,6 +417,50 @@ Cmd_AddCommand ("kill", Host_Kill_f);
 Cbuf_AddText ("map e1m1\n");           // queued, runs in Cbuf_Execute this frame
 Cbuf_InsertText ("exec quake.rc\n");   // runs before anything already queued
 ```
+
+`Cmd_Exec_f` as changed by this port:
+
+```c
+mark = Hunk_LowMark ();
+f = (char *)COM_LoadHunkFile (Cmd_Argv(1));
+if (!f)
+{
+	// the re-release's pak0.pak has no default.cfg (its engine has it built in), and without
+	// it nothing is bound: use ours (defaultcfg.h)
+	if (!Q_strcmp (Cmd_Argv(1), "default.cfg"))
+	{
+		Con_Printf ("execing default.cfg (built in)\n");
+		Cbuf_InsertText ((char *)default_cfg);
+		return;
+	}
+	Con_Printf ("couldn't exec %s\n",Cmd_Argv(1));
+	return;
+}
+Con_Printf ("execing %s\n",Cmd_Argv(1));
+
+// the file may not end in a newline (the re-release's quake.rc does not), which would glue
+// its last command to whatever is queued behind it
+Cbuf_InsertText ("\n");
+Cbuf_InsertText (f);
+Hunk_FreeToLowMark (mark);
+```
+
+### Built-in `default.cfg` (`defaultcfg.h`)
+
+A `static const char default_cfg[]` with the same commands as the shareware pak's `default.cfg`, included only by `cmd.c`.
+`quake.rc` runs `exec default.cfg` first, then `config.cfg`, so these are the defaults the saved options are applied on top of.
+
+| Group | Content |
+| --- | --- |
+| Reset | `unbindall` (so *Reset defaults* in the Options menu also clears anything else) |
+| Movement and buttons | `UPARROW` `+forward`, `DOWNARROW` `+back`, `LEFTARROW` `+left`, `RIGHTARROW` `+right`, `CTRL` `+attack`, `SPACE` and `ENTER` `+jump`, `,` `+moveleft`, `.` `+moveright`, `ALT` `+strafe`, `SHIFT` `+speed`, look keys |
+| Weapons | `1`–`8` and `0` `impulse n`, `/` `impulse 10` |
+| Menus and screen | `ESCAPE` `togglemenu`, function keys, `PAUSE`, `~` and `` ` `` `toggleconsole`, `+` `=` `-` size keys |
+| Mouse | `MOUSE1` `+attack`, `MOUSE2` `+forward`, `MOUSE3` and `\` `+mlook` |
+| Default cvars | `viewsize 100`, `gamma 1.0`, `volume 0.7`, `sensitivity 3` |
+
+On the Playdate the buttons reach these bindings as keys: [`poll_input`](../port/playdate.md#input-mapping) sends `K_UPARROW`,
+`K_CTRL`, … and Quake looks the command up in `keybindings[key]`.
 
 ---
 

@@ -1,6 +1,6 @@
 # Platform interface headers
 
-[← Documentation index](../README.md)
+[← Documentation index](../README.md) · [Source index](../source-index.md)
 
 These headers declare the functions the engine *expects the platform to provide*: video, input, sound and CD
 audio. In this repository the implementations live under [`port/`](../port/overview.md) (see the table at the
@@ -12,7 +12,7 @@ nothing in this tree includes any more.
 | [`vid.h`](#vidh) | [`port/vid_port.c`](../port/overview.md#portvid_portc) |
 | [`input.h`](#inputh) | [`port/in_port.c`](../port/overview.md#portin_portc) |
 | [`sound.h`](#soundh) | [`port/boards/playdate/snd.c`](../port/playdate.md#sndc) |
-| [`cdaudio.h`](#cdaudioh) | [`port/cd_null.c`](../port/overview.md#portcd_nullc) |
+| [`cdaudio.h`](#cdaudioh) | [`port/boards/playdate/cd_pd.c`](../port/playdate.md#cd_pdc) |
 | [Legacy headers](#legacy-x86-headers-not-used) | nothing (unused) |
 
 ---
@@ -114,8 +114,9 @@ S_StartSound (cl.viewentity, 0, s, vec3_origin, 1.0f, 1.0f);
 
 ## `cdaudio.h`
 
-`CDAudio_Init`, `Play`, `Stop`, `Pause`, `Resume`, `Update`, `Shutdown`. All are empty in
-[`cd_null.c`](../port/overview.md#portcd_nullc); there is no CD music.
+`CDAudio_Init`, `Play`, `Stop`, `Pause`, `Resume`, `Update`, `Shutdown`. The Playdate implements them in
+[`cd_pd.c`](../port/playdate.md#cd_pdc): track *N* is the file `id1/music/QuakeNN`, streamed by a `FilePlayer`.
+[`cd_null.c`](../port/overview.md#portcd_nullc) has them as empty functions (the host check).
 
 ---
 

@@ -1,6 +1,6 @@
 # Networking
 
-[← Documentation index](../README.md)
+[← Documentation index](../README.md) · [Source index](../source-index.md)
 
 Quake always talks to its server through a *socket* abstraction, even in single player. Which concrete networking exists depends on the build:
 
