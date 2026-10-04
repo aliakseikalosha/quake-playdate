@@ -23,6 +23,10 @@ static byte *vid_buffer;
 static byte *surfcache;
 static uint32_t clut_argb8888[256];
 
+extern cvar_t pd_dither;	/* "Dithering" in the options menu (menu.c) */
+int qembd_dither_mode;		/* pd_dither as the display layer reads it */
+int qembd_frame_no;			/* VID_Update calls so far: the display layer's frame counter */
+
 /* Global allocation for the renderer */
 unsigned short d_8to16table[256];
 unsigned d_8to24table[256];
@@ -82,6 +86,8 @@ void VID_Shutdown(void)
 
 void VID_Update(vrect_t *rects)
 {
+	qembd_dither_mode = (int)pd_dither.value;
+	qembd_frame_no++;
 	while (rects) {
 		qembd_fillrect(vid_buffer, clut_argb8888, rects->x, rects->y, rects->width, rects->height);
 		rects = rects->pnext;

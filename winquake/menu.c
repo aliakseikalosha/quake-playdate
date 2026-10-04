@@ -300,6 +300,17 @@ void M_Menu_Main_f (void)
 	m_entersound = true;
 }
 
+// leave the menus: back to the game, or to the title screen's demos
+static void M_Menu_Close (void)
+{
+	key_dest = key_game;
+	m_state = m_none;
+	cls.demonum = m_save_demonum;
+	if (cls.demonum != -1 && !cls.demoplayback && cls.state != ca_connected)
+		CL_NextDemo ();
+	qembd_set_relative_mode(true);
+}
+
 
 void M_Main_Draw (void)
 {
@@ -319,12 +330,7 @@ void M_Main_Key (int key)
 	switch (key)
 	{
 	case K_ESCAPE:
-		key_dest = key_game;
-		m_state = m_none;
-		cls.demonum = m_save_demonum;
-		if (cls.demonum != -1 && !cls.demoplayback && cls.state != ca_connected)
-			CL_NextDemo ();
-		qembd_set_relative_mode(true);
+		M_Menu_Close ();
 		break;
 
 	case K_DOWNARROW:
@@ -1094,8 +1100,10 @@ enum
 	OPT_AUTOFIRE,
 	OPT_TEXDETAIL,
 	OPT_INTERLACE,
+	OPT_DITHER,
 	OPT_MAXDIST,
 	OPT_MAXFPS,
+	OPT_SHOWFPS,
 	OPT_VIDEO,
 #ifdef _WIN32
 	OPT_USEMOUSE,
@@ -1113,6 +1121,7 @@ enum
 
 int		options_cursor;
 static int	options_top;	// first row shown
+static qboolean	options_to_game;	// opened by M_Menu_Options_Shortcut: Escape goes back to the game
 
 // crank turn speed (degrees of view turn per degree of crank), see port/boards/playdate/main.c
 cvar_t	crank_speed = {"crank_speed", "1.4", true};
@@ -1128,6 +1137,19 @@ static int M_MaxFpsStep (void)
 	if (pd_maxfps.value <= 0)
 		return NUM_MAXFPS_STEPS - 1;
 	return pd_maxfps.value > 30 ? 1 : 0;
+}
+
+// how the 1-bit display is dithered (port/boards/playdate/display.c): 2x2 patterns in the 3D view
+// and Bayer elsewhere, Bayer everywhere, blue noise everywhere, or error diffusion
+cvar_t	pd_dither = {"pd_dither", "0", true};
+static const char	*const dither_names[] = {"patterns", "bayer", "blue noise", "diffusion"};
+#define	NUM_DITHER_MODES	(int)(sizeof(dither_names) / sizeof(dither_names[0]))
+
+static int M_DitherMode (void)
+{
+	int		mode = (int)pd_dither.value;
+
+	return (mode < 0 || mode >= NUM_DITHER_MODES) ? 0 : mode;
 }
 #define	CRANK_SPEED_STEP	0.2f
 #define	CRANK_SPEED_MIN		0.2f
@@ -1167,9 +1189,24 @@ void M_Menu_Options_f (void)
 	key_dest = key_menu;
 	m_state = m_options;
 	m_entersound = true;
+	options_to_game = false;
 
 	if (!M_OptionShown (options_cursor))
 		options_cursor = 0;
+}
+
+// the Options screen straight from the game (the Playdate system menu's "Options" item), with the
+// same bookkeeping as opening the main menu; Escape leaves it for the game, not for the main menu
+void M_Menu_Options_Shortcut (void)
+{
+	qembd_set_relative_mode(false);
+	if (key_dest != key_menu)
+	{
+		m_save_demonum = cls.demonum;
+		cls.demonum = -1;
+	}
+	M_Menu_Options_f ();
+	options_to_game = true;
 }
 
 
@@ -1246,6 +1283,10 @@ void M_AdjustSliders (int dir)
 		Cvar_SetValue ("r_interlace", !r_interlace.value);
 		break;
 
+	case OPT_DITHER:	// patterns, bayer, blue noise, diffusion; wraps around
+		Cvar_SetValue ("pd_dither", (M_DitherMode () + dir + NUM_DITHER_MODES) % NUM_DITHER_MODES);
+		break;
+
 	case OPT_MAXDIST:	// render distance, no wrap-around
 		{
 			int		step = M_MaxDistStep () + dir;
@@ -1268,6 +1309,10 @@ void M_AdjustSliders (int dir)
 				step = NUM_MAXFPS_STEPS - 1;
 			Cvar_SetValue ("pd_maxfps", maxfps_steps[step]);
 		}
+		break;
+
+	case OPT_SHOWFPS:	// the frame-rate counter
+		Cvar_SetValue ("scr_showfps", !scr_showfps.value);
 		break;
 
 #ifdef _WIN32
@@ -1384,6 +1429,17 @@ void M_Options_Draw (void)
 			M_OptPrint (OPT_LABEL_X, y, "Interlaced");
 			M_OptCheckbox (OPT_VALUE_X, y, r_interlace.value);
 			break;
+		case OPT_DITHER:
+			M_OptPrint (OPT_LABEL_X, y, "Dithering");
+			{
+				const char	*name = dither_names[M_DitherMode ()];
+				int			x = OPT_VALUE_X;
+
+				if (x + (int)strlen (name) * OPT_CW > (int)vid.width)	// wider than the value column
+					x = (int)vid.width - (int)strlen (name) * OPT_CW;	// the label is short
+				M_OptPrint (x, y, (char *)name);
+			}
+			break;
 		case OPT_MAXDIST:
 			M_OptPrint (OPT_LABEL_X, y, "Draw distance");
 			M_OptSlider (OPT_VALUE_X, y, (float)M_MaxDistStep () / (NUM_MAXDIST_STEPS - 1));
@@ -1394,6 +1450,10 @@ void M_Options_Draw (void)
 				M_OptPrint ((int)vid.width - 9*OPT_CW, y, "unlimited");	// wider than the value column; the label is short
 			else
 				M_OptPrint (OPT_VALUE_X, y, M_MaxFpsStep () ? "50" : "30");
+			break;
+		case OPT_SHOWFPS:
+			M_OptPrint (OPT_LABEL_X, y, "Show FPS");
+			M_OptCheckbox (OPT_VALUE_X, y, scr_showfps.value);
 			break;
 		case OPT_VIDEO:
 			M_OptPrint (OPT_LABEL_X, y, "Video options");
@@ -1418,7 +1478,10 @@ void M_Options_Key (int k)
 	{
 	case K_ESCAPE:
 		Host_SaveOptions ();
-		M_Menu_Main_f ();
+		if (options_to_game)
+			M_Menu_Close ();
+		else
+			M_Menu_Main_f ();
 		break;
 
 	case K_ENTER:
@@ -1431,9 +1494,11 @@ void M_Options_Key (int k)
 			// defaults (keep in step with the cvar definitions)
 			Cvar_SetValue ("d_mipcap", 1);
 			Cvar_SetValue ("r_interlace", 1);
+			Cvar_SetValue ("pd_dither", 0);
 			Cvar_SetValue ("r_maxdist", 512);
 			Cvar_SetValue ("crank_speed", 1.4f);
 			Cvar_SetValue ("pd_maxfps", 30);
+			Cvar_SetValue ("scr_showfps", 1);
 			host_options_dirty = true;
 			break;
 		case OPT_VIDEO:
@@ -3175,6 +3240,7 @@ void M_Init (void)
 	Cmd_AddCommand ("togglemenu", M_ToggleMenu_f);
 	Cvar_RegisterVariable (&crank_speed);
 	Cvar_RegisterVariable (&pd_maxfps);
+	Cvar_RegisterVariable (&pd_dither);
 
 	Cmd_AddCommand ("menu_main", M_Menu_Main_f);
 	Cmd_AddCommand ("menu_singleplayer", M_Menu_SinglePlayer_f);

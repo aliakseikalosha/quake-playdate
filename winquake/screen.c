@@ -65,9 +65,9 @@ qboolean	block_drawing;
 #define SHOW_FPS 1
 
 #ifdef SHOW_FPS
-// port: off by default; the measurement and text are only refreshed twice a
-// second, so leaving it off costs nothing and turning it on stays cheap
-cvar_t	scr_showfps = {"scr_showfps", "0"};
+// port: "Show FPS" in the options menu, on by default and kept in config.cfg; the
+// measurement and text are only refreshed twice a second, so it stays cheap
+cvar_t	scr_showfps = {"scr_showfps", "1", true};
 static char		scr_fps_str[16];
 static int		scr_fps_frames;
 static double	scr_fps_start;

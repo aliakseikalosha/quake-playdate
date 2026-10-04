@@ -9,9 +9,10 @@
  *   Crank           turn left / right
  *                   (crank out: D-pad left/right strafe instead of turning)
  *   Crank out       autofire while an enemy is under the crosshair
- *   System menu     "Quake Menu" opens Quake's own menu (autofire is toggled in
- *                   its Options); "Weapon" lists the weapons you can use now;
- *                   "Show FPS" toggles the frame-rate counter.
+ *   System menu     "Game Menu" opens Quake's own menu; "Options" opens its
+ *                   Options screen directly (leaving it returns to the game;
+ *                   autofire is toggled there); "Weapon" lists the weapons you
+ *                   can use now.
  * While a demo is playing (title screen) A and B open Quake's menu.
  */
 
@@ -49,8 +50,8 @@ static jmp_buf frame_jmp;
 static int in_frame;
 
 static int menu_requested;
+static int options_requested;
 static PDMenuItem *weapon_item;
-static PDMenuItem *fps_item;
 
 /* ---------------------------------------------------------------- time */
 
@@ -207,6 +208,11 @@ static void poll_input(void)
 		pdq_push_key(K_ESCAPE, 1);
 		pdq_push_key(K_ESCAPE, 0);
 	}
+	if (options_requested)
+	{
+		options_requested = 0;
+		M_Menu_Options_Shortcut();
+	}
 
 	/* Crank turns the player while playing (clockwise = right) */
 	if (key_dest == key_game && cls.state == ca_connected && !cls.demoplayback)
@@ -224,10 +230,9 @@ static void menu_quake(void *ud)
 	menu_requested = 1;
 }
 
-static void menu_showfps(void *ud)
+static void menu_options(void *ud)
 {
-	if (state == ST_RUN)
-		Cvar_SetValue("scr_showfps", qembd_pd->system->getMenuItemValue(fps_item));
+	options_requested = 1;
 }
 
 static void menu_weapon(void *ud)
@@ -309,7 +314,6 @@ static int update(void *ud)
 		}
 		pdprof_stage("qembd_init done");
 		apply_run();
-		Cvar_SetValue("scr_showfps", 1); /* matches the checked "Show FPS" system menu item */
 		pdprof_init();
 		Key_SetBinding(',', "+moveleft");
 		Key_SetBinding('.', "+moveright");
@@ -369,7 +373,7 @@ int eventHandler(PlaydateAPI *playdate, PDSystemEvent event, uint32_t arg)
 		pdprof_stage("kEventInit");
 		playdate->display->setRefreshRate(PD_REFRESH_RATE);
 		playdate->system->addMenuItem("Game Menu", menu_quake, NULL);
-		fps_item = playdate->system->addCheckmarkMenuItem("Show FPS", 1, menu_showfps, NULL);
+		playdate->system->addMenuItem("Options", menu_options, NULL);
 		/* Setting an update callback tells the system this is a pure C game */
 		playdate->system->setUpdateCallback(update, NULL);
 	}

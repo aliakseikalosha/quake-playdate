@@ -258,8 +258,8 @@ static int golden(const char *path)
 
 /*
  * HMENU=1: the options menu. Presses real keys (Key_Event) and checks navigation, the Crank speed
- * (crank_speed), Texture detail (d_mipcap), Interlaced (r_interlace) and Draw distance (r_maxdist)
- * rows, that leaving the menu writes config.cfg with the archived cvars but no key
+ * (crank_speed), Texture detail (d_mipcap), Interlaced (r_interlace), Dithering (pd_dither), Draw
+ * distance (r_maxdist) and Show FPS (scr_showfps) rows, that leaving the menu writes config.cfg with the archived cvars but no key
  * bindings, that the file reloads, and that "Reset to defaults" puts the option back.
  */
 extern int options_cursor;
@@ -268,6 +268,8 @@ extern cvar_t r_interlace;
 extern cvar_t r_maxdist;
 extern cvar_t crank_speed;
 extern cvar_t pd_maxfps;
+extern cvar_t pd_dither;
+#include <menu.h>
 
 static int menu_fail;
 #define MCHECK(cond, what) do { if (!(cond)) { printf("FAIL: %s\n", what); menu_fail++; } else printf("ok:   %s\n", what); } while (0)
@@ -537,7 +539,29 @@ static int menu_test(void)
 	MCHECK(r_interlace.value == 0, "enter toggles too");
 
 	press(K_DOWNARROW);
-	MCHECK(options_cursor == 9, "down reaches the Draw distance row");
+	MCHECK(options_cursor == 9, "down reaches the Dithering row");
+	MCHECK(pd_dither.value == 0, "dithering starts on patterns (pd_dither 0)");
+	dump_lcd("dither-patterns");
+	press(K_RIGHTARROW);
+	MCHECK(pd_dither.value == 1, "right: bayer");
+	dump_lcd("dither-bayer");
+	press(K_RIGHTARROW);
+	MCHECK(pd_dither.value == 2, "right: blue noise");
+	dump_lcd("dither-noise");
+	press(K_RIGHTARROW);
+	MCHECK(pd_dither.value == 3, "right: diffusion");
+	dump_lcd("dither-diffusion");
+	press(K_RIGHTARROW);
+	MCHECK(pd_dither.value == 0, "right from diffusion wraps to patterns");
+	press(K_LEFTARROW);
+	MCHECK(pd_dither.value == 3, "left from patterns wraps to diffusion");
+	press(K_ENTER);
+	MCHECK(pd_dither.value == 0, "enter cycles forward too");
+	press(K_RIGHTARROW);
+	MCHECK(pd_dither.value == 1, "right: bayer (what the file below saves)");
+
+	press(K_DOWNARROW);
+	MCHECK(options_cursor == 10, "down reaches the Draw distance row");
 	dump_lcd("options-bottom");
 	MCHECK(r_maxdist.value == 512, "draw distance starts at 512");
 	press(K_RIGHTARROW);
@@ -556,7 +580,7 @@ static int menu_test(void)
 	MCHECK(r_maxdist.value == 768, "right x3: 768");
 
 	press(K_DOWNARROW);
-	MCHECK(options_cursor == 10, "down reaches the Max framerate row");
+	MCHECK(options_cursor == 11, "down reaches the Max framerate row");
 	MCHECK(pd_maxfps.value == 30, "max framerate starts at 30");
 	press(K_LEFTARROW);
 	MCHECK(pd_maxfps.value == 30, "left at 30 stays 30");
@@ -571,9 +595,20 @@ static int menu_test(void)
 	MCHECK(pd_maxfps.value == 50, "left: 50");
 
 	press(K_DOWNARROW);
+	MCHECK(options_cursor == 12, "down reaches the Show FPS row");
+	MCHECK(scr_showfps.value == 1, "show fps starts on");
+	dump_lcd("options-showfps");
+	press(K_RIGHTARROW);
+	MCHECK(scr_showfps.value == 0, "right: off");
+	press(K_LEFTARROW);
+	MCHECK(scr_showfps.value == 1, "left: on again");
+	press(K_ENTER);
+	MCHECK(scr_showfps.value == 0, "enter toggles too (what the file below saves)");
+
+	press(K_DOWNARROW);
 	MCHECK(options_cursor == 0, "down from the last row wraps to the first (no Video Options row here)");
 	press(K_UPARROW);
-	MCHECK(options_cursor == 10, "up from the first row lands on Max framerate");
+	MCHECK(options_cursor == 12, "up from the first row lands on Show FPS");
 
 	MCHECK(slurp(path) == NULL, "no config.cfg before leaving the menu");
 	press(K_ESCAPE);
@@ -582,24 +617,30 @@ static int menu_test(void)
 	MCHECK(cfg != NULL, "leaving the menu writes config.cfg");
 	MCHECK(cfg && strstr(cfg, "d_mipcap \"0"), "config.cfg holds d_mipcap 0");
 	MCHECK(cfg && strstr(cfg, "r_interlace \"0"), "config.cfg holds r_interlace 0");
+	MCHECK(cfg && strstr(cfg, "pd_dither \"1"), "config.cfg holds pd_dither 1");
 	MCHECK(cfg && strstr(cfg, "r_maxdist \"768"), "config.cfg holds r_maxdist 768");
 	MCHECK(cfg && strstr(cfg, "crank_speed \"2.6"), "config.cfg holds crank_speed 2.6");
 	MCHECK(cfg && strstr(cfg, "pd_maxfps \"50"), "config.cfg holds pd_maxfps 50");
+	MCHECK(cfg && strstr(cfg, "scr_showfps \"0"), "config.cfg holds scr_showfps 0");
 	MCHECK(cfg && strstr(cfg, "cl_autofire"), "config.cfg holds the other archived options");
 	MCHECK(cfg && !strstr(cfg, "bind "), "config.cfg holds no key bindings");
 
 	Cvar_SetValue("d_mipcap", 1);
 	Cvar_SetValue("r_interlace", 1);
+	Cvar_SetValue("pd_dither", 0);
 	Cvar_SetValue("r_maxdist", 0);
 	Cvar_SetValue("crank_speed", 1);
 	Cvar_SetValue("pd_maxfps", 30);
+	Cvar_SetValue("scr_showfps", 1);
 	cmd("exec config.cfg\n");
 	run(3);
 	MCHECK(d_mipcap.value == 0, "config.cfg restores d_mipcap 0 (what the next launch does)");
 	MCHECK(r_interlace.value == 0, "config.cfg restores r_interlace 0");
+	MCHECK(pd_dither.value == 1, "config.cfg restores pd_dither 1");
 	MCHECK(r_maxdist.value == 768, "config.cfg restores r_maxdist 768");
 	MCHECK(crank_speed.value == 2.6f, "config.cfg restores crank_speed 2.6");
 	MCHECK(pd_maxfps.value == 50, "config.cfg restores pd_maxfps 50");
+	MCHECK(scr_showfps.value == 0, "config.cfg restores scr_showfps 0");
 
 	/* Reset to defaults puts it back */
 	cmd("menu_options\n");
@@ -611,14 +652,43 @@ static int menu_test(void)
 	run(3);
 	MCHECK(d_mipcap.value == 1, "reset to defaults sets texture detail back to low");
 	MCHECK(r_interlace.value == 1, "reset to defaults turns interlaced on");
+	MCHECK(pd_dither.value == 0, "reset to defaults sets dithering back to patterns");
 	MCHECK(r_maxdist.value == 512, "reset to defaults sets the draw distance back to 512");
 	MCHECK(crank_speed.value == 1.4f, "reset to defaults sets crank speed back to 1.4");
 	MCHECK(pd_maxfps.value == 30, "reset to defaults sets max framerate back to 30");
+	MCHECK(scr_showfps.value == 1, "reset to defaults turns show fps on");
 	press(K_ESCAPE);
 	cfg = slurp(path);
 	MCHECK(cfg && strstr(cfg, "d_mipcap \"1"), "and the saved file says so");
 
 	remove(path);
+
+	/* The system menu's "Options" item (M_Menu_Options_Shortcut): the Options screen straight from the
+	 * game, and Escape goes back to the game rather than to the main menu */
+	press(K_ESCAPE);
+	MCHECK(key_dest == key_game, "escape from the main menu returns to the game");
+	M_Menu_Options_Shortcut();
+	run(3);
+	MCHECK(key_dest == key_menu, "the Options shortcut opens a menu");
+	i = options_cursor;
+	press(K_DOWNARROW);
+	MCHECK(options_cursor == i + 1, "and it is the options menu (down moves its cursor)");
+	dump_lcd("options-shortcut");
+	press(K_ESCAPE);
+	MCHECK(key_dest == key_game, "escape leaves the shortcut's Options screen for the game");
+	cmd("menu_options\n");
+	run(3);
+	MCHECK(key_dest == key_menu, "the menu_options command opens the options menu");
+	press(K_ESCAPE);
+	MCHECK(key_dest == key_menu, "escape from it still leads to the main menu (the shortcut does not stick)");
+	press(K_ESCAPE);
+	MCHECK(key_dest == key_game, "and escape from the main menu to the game");
+	cmd("menu_main\n");
+	run(3);
+	M_Menu_Options_Shortcut();
+	run(3);
+	press(K_ESCAPE);
+	MCHECK(key_dest == key_game, "the shortcut used over the main menu also leaves for the game");
 
 	/* the load menu (double-size font): a saved slot and the unused ones */
 	cmd("save s11\n");
@@ -630,6 +700,20 @@ static int menu_test(void)
 	press(K_ESCAPE);
 	snprintf(path, sizeof(path), "%s/s11.sav", com_gamedir);
 	MCHECK(remove(path) == 0, "save to slot 11 wrote s11.sav");
+
+	/* the title screen cycles its demos; the Options screen must stop that while it is open and let it
+	 * go on afterwards, as the main menu does */
+	press(K_ESCAPE);	/* the load menu left us in the single player menu */
+	press(K_ESCAPE);
+	MCHECK(key_dest == key_game, "menus closed before the demos start");
+	cmd("disconnect\nstartdemos demo1\n");
+	run(10);
+	MCHECK(cls.demoplayback && cls.demonum >= 0, "the title demos are cycling");
+	M_Menu_Options_Shortcut();
+	run(3);
+	MCHECK(cls.demonum == -1, "the Options shortcut stops the demos cycling");
+	press(K_ESCAPE);
+	MCHECK(key_dest == key_game && cls.demonum >= 0, "and leaving it lets them go on");
 
 	printf("%s\n", menu_fail ? "MENU TEST FAILED" : "menu test passed");
 	return menu_fail ? 1 : 0;
@@ -653,7 +737,7 @@ int main(int argc, char **argv)
 	 * the regression modes compare against the original picture, so switch them off there
 	 * (the menu test checks the real defaults) */
 	if (!getenv("HMENU"))
-		cmd("d_mipcap 0\nr_interlace 0\nr_maxdist 0\n");
+		cmd("d_mipcap 0\nr_interlace 0\nr_maxdist 0\nscr_showfps 0\n");
 	if (getenv("HINTERLACE"))	/* HINTERLACE=1: every mode below with interlaced rendering */
 		cmd("r_interlace 1\n");
 	if (getenv("HCMD")) {		/* HCMD="...": console commands before any mode below */
@@ -714,6 +798,16 @@ int main(int argc, char **argv)
 	step("demo1", "playdemo demo1\n", frames * 3);
 	step("demo2", "playdemo demo2\n", frames * 3);
 	step("demo3", "playdemo demo3\n", frames * 3);
+	/* the Dithering option switched while playing: the rows an interlaced frame keeps must be dithered again */
+	{
+		float saved = pd_dither.value;
+
+		step("dither bayer", "playdemo demo1\npd_dither 1\n", frames);
+		step("dither blue noise", "pd_dither 2\n", frames);
+		step("dither diffusion", "pd_dither 3\n", frames);
+		step("dither patterns", "pd_dither 0\n", frames);
+		Cvar_SetValue("pd_dither", saved);
+	}
 	step("demo1 fps counter", "playdemo demo1\nscr_showfps 1\n", frames * 2);
 
 	printf("frames %ld | screen updates %ld | pending row pairs verified %ld | pairs expanded for overlays %ld\n",
