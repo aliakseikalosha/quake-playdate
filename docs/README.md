@@ -56,7 +56,7 @@ One frame (single player), in `Host_Frame`: read buttons → run console command
 | [Build system](build-system.md) | `CMakeLists.txt` (root, `winquake/`, `port/`), `platform.cmake` and every `PD_*` option, the Playdate board's CMake files, VS Code tasks |
 | [Shared platform layer](port/overview.md) | `include/quakembd.h`, `port/sys_port.c`, `vid_port.c`, `in_port.c`, `cd_null.c`, `fio/fio_posix.c` |
 | [Playdate board](port/playdate.md) | `main.c`, `display.c`, `bluenoise.h`, `fio.c`, `pd_stdio.c`, `pd_compat.h`, `pd_port.h`, `keyqueue.*`, `autofire.*`, `weapons.*`, `snd.c`, `pdprof.c`, `.gitignore` |
-| [Scripts and tools](tools.md) | `scripts/*` (install, bench, report, blue noise) and `tools/hostcheck/*` |
+| [Scripts and tools](tools.md) | `scripts/*` (release build, install, bench, report, blue noise) and `tools/hostcheck/*` |
 
 ### The engine (`winquake/`)
 

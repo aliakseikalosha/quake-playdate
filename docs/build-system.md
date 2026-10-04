@@ -218,6 +218,15 @@ cmake -DPDXINFO=build-dev/quake_DEVICE.pdx/pdxinfo \
       -P port/boards/playdate/pdx_buildnumber.cmake
 ```
 
+### Release build
+
+```shell
+scripts/release-device.sh        # or the VS Code task "Playdate: release build (device)"
+```
+
+A clean Release build of the device `.pdx` in `build-release/` (no profiler or benchmark), with a new build number: the number appears in the built `pdxinfo`
+and is also written to `Source/pdxinfo`, so the release is recorded in the source tree. Details in [Scripts and tools](tools.md#scriptsrelease-devicesh).
+
 ### `toolchain.cmake`
 
 [`toolchain.cmake`](../port/boards/playdate/toolchain.cmake) only locates the SDK and includes
@@ -257,6 +266,6 @@ The engine's desktop networking (`net_dgrm.c`, `net_udp.c`, `net_bsd.c`) is Quak
 ## Editor integration
 
 [`.vscode/tasks.json`](../.vscode/tasks.json) wraps the common builds
-(`Playdate: build (simulator, debug)`, `Playdate: build (device)`, `Install on device (USB)`);
+(`Playdate: build (simulator, debug)`, `Playdate: build (device)`, `Playdate: release build (device)`, `Install on device (USB)`);
 [`.vscode/launch.json`](../.vscode/launch.json) launches the Playdate Simulator under CodeLLDB
-against `build-sim-debug/quake.pdx`. See [Scripts and tools](tools.md) for `install-device.sh`.
+against `build-sim-debug/quake.pdx`. See [Scripts and tools](tools.md) for `release-device.sh` and `install-device.sh`.

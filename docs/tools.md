@@ -4,11 +4,12 @@
 
 Two directories hold the helper programs:
 
-- [`scripts/`](../scripts/): things you run on your computer around a device build (install, benchmark, report, generate data).
+- [`scripts/`](../scripts/): things you run on your computer around a device build (release build, install, benchmark, report, generate data).
 - [`tools/hostcheck/`](../tools/hostcheck/): a harness that runs the real engine and the real Playdate display code *on the host* to prove an optimisation did not change the picture.
 
 | File | Purpose |
 | --- | --- |
+| [`scripts/release-device.sh`](#scriptsrelease-devicesh) | Clean Release build of the device `.pdx` with a new build number |
 | [`scripts/install-device.sh`](#scriptsinstall-devicesh) | Copy the device `.pdx` to a USB-connected Playdate and launch it |
 | [`scripts/pd-bench.sh`](#scriptspd-benchsh) | Run a profiling build on the device and fetch `prof.csv` |
 | [`scripts/pd-report.py`](#scriptspd-reportpy) | Summarise and compare `prof.csv` files |
@@ -20,6 +21,30 @@ Two directories hold the helper programs:
 | [`tools/hostcheck/compare-shots.py`](#toolshostcheckcompare-shotspy) | Measure how much two renderers' pictures differ |
 
 ---
+
+## `scripts/release-device.sh`
+
+A clean **Release** build of the game for the device, with a new build number. Also available as the VS Code task **Playdate: release build (device)**.
+
+```shell
+scripts/release-device.sh                    # → build-release/quake_DEVICE.pdx
+BUILD_DIR=build-foo scripts/release-device.sh
+```
+
+Steps:
+
+1. Removes the build directory (`build-release`, git-ignored) and the stale `Source/pdex.*` files that `pdc` would bundle, so everything is rebuilt and the post-build step that hands out the build number always runs.
+2. Configures a Release device build (`-DCMAKE_BUILD_TYPE=Release -DPD_PROFILE=OFF -DPD_BENCH=OFF`, with the SDK's ARM toolchain) and builds it with all cores.
+3. Reads the build number the build wrote into the `.pdx`'s `pdxinfo` ([`pdx_buildnumber.cmake`](build-system.md#playdate-board-cmakeliststxt): one more than the larger of `.build_number` and the `buildNumber` in `Source/pdxinfo`) and checks it went up. If it did not, the script stops with an error.
+4. Writes that number into `port/boards/playdate/Source/pdxinfo`, so the release's number is recorded in the source tree (a tracked file: commit it with the release) and the next build counts on from it. Nothing else in `Source/pdxinfo` is changed (to change the `version=` line, edit it by hand).
+
+```
+Release build done: build-release/quake_DEVICE.pdx
+  version 0.3, build number 88 -> 89 (also written to port/boards/playdate/Source/pdxinfo)
+```
+
+Run twice, it goes 89 → 90: every release gets its own number. The built `pdxinfo` and `Source/pdxinfo` then agree; an ordinary build (`build-dev`, simulator) only changes the built `pdxinfo`, never `Source/pdxinfo`.
+The script does not install the result; [`install-device.sh`](#scriptsinstall-devicesh) installs `build-dev/quake_DEVICE.pdx`.
 
 ## `scripts/install-device.sh`
 

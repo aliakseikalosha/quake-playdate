@@ -38,6 +38,14 @@
 			"problemMatcher": ["$gcc"]
 		},
 		{
+			"label": "Playdate: release build (device)",
+			"type": "shell",
+			// Clean Release build of the device .pdx in build-release/ (no profiler), with a new
+			// build number: shown in the built pdxinfo and written to Source/pdxinfo.
+			"command": "./scripts/release-device.sh",
+			"problemMatcher": ["$gcc"]
+		},
+		{
 			"label": "Install on device (USB)",
 			"type": "shell",
 			"dependsOn": "Playdate: clean build (device)",
