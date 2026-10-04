@@ -5,18 +5,22 @@
 Quake expects an operating system. This port replaces it with two small layers:
 
 1. **Engine-facing functions** in `port/*.c` that implement the classic WinQuake platform
-   interface (`Sys_*`, `VID_*`, `IN_*`, `CDAudio_*`, `S_*`). They are the same for every board.
+   interface (`Sys_*`, `VID_*`, `IN_*`, `CDAudio_*`). They do not depend on the hardware.
 2. **Board hooks**, the `qembd_*` functions declared in [`include/quakembd.h`](../../include/quakembd.h),
-   which each board implements for its own hardware.
+   which a board implements for its own hardware.
+
+The only board in this tree is the [Playdate](playdate.md). (The upstream project's desktop, RISC-V and STM32 boards were
+removed, see [Removed boards](../build-system.md#removed-boards); the hook interface they used is kept, so another board
+could still be written, see the [skeleton](#minimal-board-skeleton).)
 
 ```
  winquake/ (engine)
      │  Sys_FloatTime(), VID_Update(), IN_Move(), Sys_FileOpenRead() ...
      ▼
- port/*.c  (this page)         ← identical on every board
+ port/*.c  (this page)         ← independent of the hardware
      │  qembd_get_us_time(), qembd_fillrect(), qembd_dequeue_key_event() ...
      ▼
- port/boards/<board>/*.c       ← one implementation per board
+ port/boards/playdate/*.c      ← the board: one implementation of the hooks
 ```
 
 Files covered here:
@@ -28,9 +32,7 @@ Files covered here:
 | [`port/vid_port.c`](#portvid_portc) | `VID_*`, glue to `qembd_fillrect` |
 | [`port/in_port.c`](#portin_portc) | `IN_*` (mouse look) |
 | [`port/cd_null.c`](#portcd_nullc) | `CDAudio_*` as no-ops |
-| [`port/snd.c`](#portsndc) | Sound for boards without their own backend (RISC-V emulator) |
-| [`port/fio/fio_posix.c`](#portfiofio_posixc) | `Sys_File*` on POSIX |
-| [`port/fio/fio_fatfs.c`](#portfiofio_fatfsc) | `Sys_File*` on FatFs (SD card) |
+| [`port/fio/fio_posix.c`](#portfiofio_posixc) | `Sys_File*` on POSIX (used by the host check) |
 
 ---
 
@@ -52,18 +54,17 @@ Output goes through `QEMBD_PRINTF` (default `printf`; the Playdate build redefin
 `pdq_printf`, see [Playdate board](playdate.md)). `QEMBD_LOGGING_TAG` (default `"QUAKEMBD"`)
 prefixes each line.
 
-Three helpers implement the "log and jump to cleanup" pattern used by the STM32 board code:
+Three helpers implement a "log and jump to cleanup" pattern. Nothing in the Playdate build uses them (they came from the removed STM32 board):
 
 ```c
-static void filesystem_init(void)
+static int open_things(void)
 {
-	FRESULT r;
+	FILE *f = fopen("id1/pak0.pak", "rb");
 
-	r = f_mount(&fatfs, (const TCHAR *) sd_path, 0);
-	bail_if_error(r, FR_OK, "Cannot mount");   // logs "Cannot mount: <r>" and goes to bail
-	return;
+	bail_if_null(f, "Cannot open pak0.pak");      // logs the message and goes to bail
+	return 0;
 bail:
-	error_loop();
+	return -1;
 }
 ```
 
@@ -73,7 +74,7 @@ bail:
 
 ```c
 typedef struct { uint32_t keycode; uint8_t state; } key_event_t;       // state 1 = pressed
-typedef struct { int32_t x, y, xrel, yrel; }        mouse_motion_t;
+typedef struct { int32_t x, y, xrel, yrel; }        mouse_motion_t;    // not used by the Playdate board
 typedef struct { int32_t x, y; }                    mouse_movement_t;  // delta since last call
 ```
 
@@ -95,7 +96,7 @@ typedef struct { int32_t x, y; }                    mouse_movement_t;  // delta 
 
 | Function | Defined in | Purpose |
 | --- | --- | --- |
-| `int qembd_main(int argc, char **argv)` | `sys_port.c` | `qembd_init` then `qembd_frame` forever. For boards that own the process. |
+| `int qembd_main(int argc, char **argv)` | `sys_port.c` | `qembd_init` then `qembd_frame` forever. For a board that owns the process; the Playdate does not use it (it is called once per frame by the system). |
 | `int qembd_init(int argc, char **argv)` | `sys_port.c` | Allocate the heap and run `Host_Init`. |
 | `void qembd_frame(void)` | `sys_port.c` | Run one `Host_Frame`. For boards that are called once per frame (Playdate). |
 
@@ -111,8 +112,10 @@ void qembd_quit(void) __attribute__((noreturn));              // Sys_Quit
 
 ### Minimal board skeleton
 
+An illustration (not a file in the tree) of what a new board has to provide. The real example is [`port/boards/playdate`](playdate.md).
+
 ```c
-// main.c of a hypothetical desktop board
+// main.c of a hypothetical board that owns the process
 #include <quakembd.h>
 #include <stdlib.h>
 #include <time.h>
@@ -142,7 +145,7 @@ void qembd_refresh()    { /* present framebuffer */ }
 int main(int c, char **v) { return qembd_main(c, v); }
 ```
 
-Plus one file I/O implementation (see [`fio`](#portfiofio_posixc) below).
+Plus the `Sys_File*` functions of `sys.h`: [`fio_posix.c`](#portfiofio_posixc) is a POSIX implementation, and the Playdate board has its own ([`fio.c`](playdate.md#fioc)).
 
 ---
 
@@ -192,8 +195,9 @@ else
 Host_Frame(time);
 ```
 
-**Using it:** a board that owns the process just calls `qembd_main(argc, argv)` from `main`;
-the Playdate calls `qembd_init` once and `qembd_frame` from its update callback.
+**Using it:** a board that owns the process would call `qembd_main(argc, argv)` from `main`;
+the Playdate calls `qembd_init` once and `qembd_frame` from its update callback. The non-Playdate branches of `Sys_Error` / `Sys_Quit`
+(`fprintf` to stderr, `exit`) are what such a board would use; they are kept from the upstream code.
 
 ## `port/vid_port.c`
 
@@ -227,7 +231,7 @@ void VID_Update(vrect_t *rects)
 ```
 
 `qembd_dither_mode` and `qembd_frame_no` exist for the Playdate display layer
-([`display.c`](playdate.md#displayc)); other boards ignore them.
+([`display.c`](playdate.md#displayc)); another board would ignore them.
 
 ## `port/in_port.c`
 
@@ -249,30 +253,6 @@ Keyboard events never go through this file; they arrive via `Sys_SendKeyEvents`.
 The `CDAudio_*` interface (`Play`, `Stop`, `Pause`, `Resume`, `Update`, `Shutdown`) as empty
 functions; `CDAudio_Init` returns `0`. Quake's CD music is not supported anywhere in this port.
 
-## `port/snd.c`
-
-"Include this instead of all the other `snd_*` files to have sound." A tiny sound shim written
-for the **RISC-V emulator board**. [`port/CMakeLists.txt`](../build-system.md#portcmakeliststxt-shared-platform-layer)
-adds it for every board except the Playdate, but its inline `scall` assembly only assembles for
-RISC-V, so in practice it serves `rv32emu`. Instead of mixing samples, it hands requests to the
-emulator through a custom `scall`:
-
-```c
-void S_StartSound(int entnum, int entchannel, sfx_t *sfx, vec3_t origin, float fvol, float attenuation)
-{
-	sfxcache_t *sfxcache = S_LoadSound(sfx);
-	register int a0 asm("a0") = PLAY_SFX;
-	register int a1 asm("a1") = (uintptr_t) sfxcache;
-	register int a2 asm("a2") = (int) (volume.value * 255);
-	register int a7 asm("a7") = 0xD00D;          // "play" syscall number
-	asm volatile("scall" : "+r"(a0) : "r"(a1), "r"(a2), "r"(a7));
-}
-```
-
-It keeps a flat table (`MAX_PRECACHE_SOUND` = 512) of loaded samples and registers the `volume`
-cvar. Most `S_*` functions are no-ops. The Playdate has
-[its own implementation](playdate.md#sndc).
-
 ## `port/fio/fio_posix.c`
 
 The file half of `sys.h` (`Sys_FileOpenRead`, `Sys_FileOpenWrite`, `Sys_FileClose`,
@@ -293,28 +273,12 @@ int Sys_FileOpenRead(char *path, int *handle)
 }
 ```
 
-Used by the `emulator` board.
-
-## `port/fio/fio_fatfs.c`
-
-The same interface on [FatFs](http://elm-chan.org/fsw/ff/) for SD cards. FatFs works with `FIL`
-objects rather than integers, so the file keeps a table of 32 (`MAX_FILES`) `FIL`s and a bitmask of
-which slots are in use; the "handle" Quake sees is the slot index.
-
-```c
-#define MAX_FILES 32
-static FIL file_rsrc[MAX_FILES];
-static uint32_t file_flags = 0;     // bit n set = slot n in use
-#define HANDLE_TO_FILE(h) (((0x01 << h) & file_flags) ? &(file_rsrc[(h)]) : NULL)
-```
-
-Used by the `stm32h747i_disco` board. Note: `Sys_FileRead` and `Sys_FileWrite` have a bare
-`return;` on an invalid handle in functions that return `int`; they should return `-1`.
+The Playdate board does not use it (see [`fio.c`](playdate.md#fioc)). It is compiled by the
+[host check](../tools.md#toolshostcheckbuildsh), which runs the engine on a computer.
 
 ---
 
-## Where the Playdate differs
+## What the Playdate board provides instead
 
-The Playdate board does **not** use `fio_*.c` or `snd.c`; it provides `fio.c`, `pd_stdio.c` and
-`snd.c` of its own, plus a `display.c` that does the 1-bit conversion and dithering. See
-[Playdate board](playdate.md).
+The Playdate board supplies the rest of the platform: `fio.c` and `pd_stdio.c` (files and stdio on the Playdate file API), `snd.c` (sound on the system's
+`SamplePlayer`s), `keyqueue.c` (key events), and a `display.c` that does the 1-bit conversion and dithering. See [Playdate board](playdate.md).

@@ -250,5 +250,5 @@ Leaving the menu with Escape calls `Host_SaveOptions()`; with `options_to_game` 
 ### Other changes from the original
 
 - `M_Menu_Close()`: one place that leaves the menu (restores the demo loop, calls `CL_NextDemo` on the title screen).
-- `qembd_set_relative_mode(false/true)` calls tell a desktop board to release or capture the mouse; a no-op on the Playdate.
+- `qembd_set_relative_mode(false/true)` calls tell a board to release or capture the mouse (they were for the removed desktop boards); the Playdate's [`keyqueue.c`](../port/playdate.md#keyqueuec--keyqueueh) defines it as an empty function.
 - `_M_RealTime4Mod1` / `_M_HostTime10Mod6` replace the cursor and menu-dot animation expressions with single-precision versions (no `double` multiply per frame).

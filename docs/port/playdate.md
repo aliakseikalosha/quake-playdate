@@ -2,7 +2,7 @@
 
 [← Documentation index](../README.md) · Directory: [`port/boards/playdate/`](../../port/boards/playdate/)
 
-The Playdate is the project's main target: a 168 MHz Cortex-M7 with a single-precision FPU,
+The Playdate is the project's only target: a 168 MHz Cortex-M7 with a single-precision FPU,
 a 400×240 1-bit LCD, a D-pad, A/B buttons and a crank. The game runs as a **C pure-game** `.pdx`:
 the system calls an *update callback* once per frame, so unlike a desktop program the port
 never owns the main loop.
@@ -336,7 +336,7 @@ while (qembd_dequeue_key_event(&e) == 0)
 ```
 
 The same file defines `qembd_get_mouse_movement` (always zero movement) and an empty
-`qembd_set_relative_mode`, which `menu.c` calls on the desktop.
+`qembd_set_relative_mode`, which `menu.c` calls (mouse capture is a desktop concept, left over from the removed desktop board).
 
 ## `autofire.c` / `autofire.h`
 

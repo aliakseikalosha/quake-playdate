@@ -11,7 +11,7 @@ nothing in this tree includes any more.
 | --- | --- |
 | [`vid.h`](#vidh) | [`port/vid_port.c`](../port/overview.md#portvid_portc) |
 | [`input.h`](#inputh) | [`port/in_port.c`](../port/overview.md#portin_portc) |
-| [`sound.h`](#soundh) | [`port/boards/playdate/snd.c`](../port/playdate.md#sndc) (Playdate), [`port/snd.c`](../port/overview.md#portsndc) (RISC-V) |
+| [`sound.h`](#soundh) | [`port/boards/playdate/snd.c`](../port/playdate.md#sndc) |
 | [`cdaudio.h`](#cdaudioh) | [`port/cd_null.c`](../port/overview.md#portcd_nullc) |
 | [Legacy headers](#legacy-x86-headers-not-used) | nothing (unused) |
 
@@ -100,8 +100,8 @@ void   S_LocalSound (char *s);                                  // menu/UI sound
 
 The original also exposes the software mixer (`S_PaintChannels`, `SND_PickChannel`, `SNDDMA_*`, `channels[128]`,
 `paintedtime`). **This port does not use that half:** the Playdate backend hands decoded samples to the system's own
-mixer, and the RISC-V backend forwards requests to the emulator. Only the cvars `volume`, `bgmvolume` and the
-variables `sound_nominal_clip_dist`, `listener_origin`, `listener_right` are shared with the implementations.
+mixer. Only the cvars `volume`, `bgmvolume` and the variables `sound_nominal_clip_dist`, `listener_origin`,
+`listener_right` are shared with the implementation.
 
 **Changes from the original:** `sfx_t` gained `cache_data_size` and `sfxcache_t` carries a `void *data` pointer
 instead of a trailing byte array (the backends keep the decoded data in their own memory).

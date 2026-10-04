@@ -273,7 +273,7 @@ int version = LittleLong (header->version);     // free on the Cortex-M7
 ### Strings
 
 `Q_strcpy`, `Q_strncpy`, `Q_strlen`, `Q_strcmp`, `Q_strcasecmp`, `Q_atoi`, `Q_atof` (now `float`), `Q_memcpy`, … are
-Quake's own versions. On RISC-V (`__riscv`) they are inline wrappers over the C library. `va(fmt, ...)` formats into a
+Quake's own versions. On RISC-V (`__riscv`) they are inline wrappers over the C library (kept from the removed RISC-V board; the Playdate uses Quake's own). `va(fmt, ...)` formats into a
 rotating static buffer; `COM_Parse(data)` is Quake's tokenizer (quoted strings, `//` comments).
 
 ### Arguments and file system

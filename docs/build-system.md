@@ -2,21 +2,21 @@
 
 [← Documentation index](README.md)
 
-The project is built with CMake. Three CMake files form the skeleton and one board
-directory is pulled in by name:
+The project is built with CMake. Three CMake files form the skeleton and the board
+directory (`port/boards/playdate`, the only board in the tree) is pulled in by name:
 
 | File | Role |
 | --- | --- |
 | [`CMakeLists.txt`](../CMakeLists.txt) | Top level. Selects the board, sets global flags, adds `port/` and `winquake/`. |
 | [`winquake/CMakeLists.txt`](../winquake/CMakeLists.txt) | Builds the engine as the `winquake` object library. |
 | [`port/CMakeLists.txt`](../port/CMakeLists.txt) | Builds the shared platform layer as the `port` object library and adds `boards/<BOARD_NAME>`. |
-| `port/boards/<board>/CMakeLists.txt` | Builds the final executable (or, for the Playdate Simulator, shared library) for one board. |
+| [`port/boards/playdate/CMakeLists.txt`](../port/boards/playdate/CMakeLists.txt) | Builds the game: the device executable, or for the Playdate Simulator a shared library. |
 
 ## How the pieces fit together
 
 ```
                 +-------------------------+
-                |  port/boards/<board>/   |   executable / shared library
+                |  port/boards/playdate/  |   executable / shared library
                 |  (main, display, fio…)  |
                 +------------+------------+
                              | links
@@ -28,8 +28,9 @@ directory is pulled in by name:
       +---------------+            +------------------+
 ```
 
-`BOARD_NAME` picks the board directory: `playdate`, `emulator`, `rv32emu`
-or `stm32h747i_disco`. Everything outside `port/boards/` is board independent.
+`BOARD_NAME` picks the board directory. It has to be passed on the command line (`-DBOARD_NAME=playdate`);
+the Playdate is the only board left in the tree (see [Removed boards](#removed-boards)).
+Everything outside `port/boards/` is board independent.
 
 ## Top-level `CMakeLists.txt`
 
@@ -69,9 +70,9 @@ else()
 endif()
 
 if(CMAKE_SYSTEM_NAME MATCHES "(Darwin|Linux)" AND NOT BOARD_NAME STREQUAL "playdate")
-	list(APPEND WQ_SRCS net_dgrm.c net_udp.c net_bsd.c)         # real networking on desktops
+	list(APPEND WQ_SRCS net_dgrm.c net_udp.c net_bsd.c)         # UDP networking (a non-Playdate Darwin/Linux board)
 else()
-	list(APPEND WQ_SRCS net_none.c)                             # no networking elsewhere
+	list(APPEND WQ_SRCS net_none.c)                             # loopback only: what the Playdate gets
 endif()
 
 if(PD_ASM_BUILD)
@@ -98,11 +99,6 @@ Things worth knowing:
 
 ```cmake
 add_library(port OBJECT in_port.c cd_null.c sys_port.c vid_port.c)
-
-# Playdate has its own sound backend (boards/playdate/snd.c)
-if(NOT BOARD_NAME STREQUAL "playdate")
-	target_sources(port PRIVATE snd.c)
-endif()
 
 target_include_directories(port PUBLIC
 	${PROJECT_SOURCE_DIR}/include
@@ -241,15 +237,22 @@ and is not used by the build.
 [`port/boards/playdate/.gitignore`](../port/boards/playdate/.gitignore) keeps the generated and non-redistributable
 files out of git: `Source/pdex.*` (build products), `Source/id1/` (the game data) and `.build_number`.
 
-## Other boards
+## Removed boards
 
-| Board | Output | Toolchain |
-| --- | --- | --- |
-| `emulator` | `quakembd` (desktop window through MiniFB) | host compiler |
-| `rv32emu` | `quake` (RISC-V RV32IMF guest for the rv32emu emulator) | [`rv32emu/toolchain.cmake`](../port/boards/rv32emu/toolchain.cmake) |
-| `stm32h747i_disco` | `quakembd.bin/.hex` | [`gcc/toolchain.cmake`](../port/boards/stm32h747i_disco/gcc/toolchain.cmake) (arm-none-eabi-gcc) |
+This project began as [sysprog21/quake-embedded](https://github.com/sysprog21/quake-embedded), which ran Quake on several targets.
+The boards that have nothing to do with the Playdate were removed from this tree, together with the files that only they used:
 
-Details are in [Other boards](port/other-boards.md).
+| Removed | What it was |
+| --- | --- |
+| `port/boards/emulator/` | Desktop window through the MiniFB library |
+| `port/boards/rv32emu/` | RISC-V guest for the rv32emu emulator |
+| `port/boards/stm32h747i_disco/` | STM32H747I-DISCO discovery board (Cortex-M7, SD card, DSI LCD), with its vendor HAL configuration |
+| `lib/minifb` (git submodule) and `.gitmodules` | The windowing library only the desktop board used |
+| `port/snd.c` | A sound shim that used RISC-V `scall`s (RISC-V board only) |
+| `port/fio/fio_fatfs.c` | `Sys_File*` on FatFs (STM32 board only) |
+
+They are all in the git history. `port/fio/fio_posix.c` stays: the [host check](tools.md#toolshostcheckhostcheckc) links it to run the engine on a computer.
+The engine's desktop networking (`net_dgrm.c`, `net_udp.c`, `net_bsd.c`) is Quake engine code and stays in the tree, but no board that selects it is left (see [Networking](engine/network.md)).
 
 ## Editor integration
 

@@ -6,10 +6,12 @@ Quake always talks to its server through a *socket* abstraction, even in single 
 
 | Build | Files compiled | What works |
 | --- | --- | --- |
-| **Playdate** (and any non-Darwin/Linux board) | `net_main.c`, `net_loop.c`, `net_none.c` | Single player only (loopback). |
-| **Desktop** (Darwin/Linux, not Playdate) | the above minus `net_none.c`, plus `net_dgrm.c`, `net_udp.c`, `net_bsd.c` | Loopback **and** UDP multiplayer. |
+| **Playdate** (the only board in the tree) | `net_main.c`, `net_loop.c`, `net_none.c` | Single player only (loopback). |
+| A Darwin/Linux board *other than* the Playdate (none exists any more) | the above minus `net_none.c`, plus `net_dgrm.c`, `net_udp.c`, `net_bsd.c` | Loopback **and** UDP multiplayer. |
 
-The choice is made in [`winquake/CMakeLists.txt`](../build-system.md#winquakecmakeliststxt-the-engine).
+The choice is made in [`winquake/CMakeLists.txt`](../build-system.md#winquakecmakeliststxt-the-engine). Since the desktop boards were removed
+([Removed boards](../build-system.md#removed-boards)), no configuration in this tree selects the second row: `net_dgrm.c`, `net_udp.c`, `net_bsd.c` (and
+the unused `net_vcr.c`) are Quake engine code that is kept but not built.
 
 ```
 CL_EstablishConnection("local")                 SV_CheckForNewClients
@@ -27,7 +29,7 @@ CL_EstablishConnection("local")                 SV_CheckForNewClients
 | [`net_main.c`](#net_mainc) | The driver-independent layer (`NET_*`) |
 | [`net_loop.h` / `net_loop.c`](#net_loopc) | In-process loopback driver (single player) |
 | [`net_none.c`](#net_nonec) | Driver table for builds without network drivers |
-| [`net_bsd.c`](#net_bsdc) | Driver table for desktop builds |
+| [`net_bsd.c`](#net_bsdc) | Driver table for builds with UDP (not built here) |
 | [`net_dgrm.h` / `net_dgrm.c`](#net_dgrmc) | Datagram driver: reliable messages over an unreliable transport |
 | [`net_udp.h` / `net_udp.c`](#net_udpc) | UDP transport (BSD sockets) |
 | [`net_vcr.h` / `net_vcr.c`](#net_vcrc-not-built) | Network recording and playback (unused) |
@@ -142,7 +144,7 @@ int net_numdrivers = 1;
 
 ## `net_bsd.c`
 
-The driver table for desktop builds: Loopback followed by `"Datagram"` (`Datagram_*`). Despite its name it contains no socket code; the sockets are in `net_udp.c`.
+The driver table for builds with UDP networking: Loopback followed by `"Datagram"` (`Datagram_*`). Despite its name it contains no socket code; the sockets are in `net_udp.c`.
 
 ---
 
@@ -180,7 +182,7 @@ n = UDP_Read (sock, buffer, sizeof buffer, &fromaddr);      // non-blocking
 UDP_Write (sock, buffer, len, &toaddr);
 ```
 
-Only compiled where `CMAKE_SYSTEM_NAME` is Darwin or Linux and the board is not the Playdate.
+Only compiled where `CMAKE_SYSTEM_NAME` is Darwin or Linux and the board is not the Playdate, which no board in this tree satisfies.
 
 ---
 

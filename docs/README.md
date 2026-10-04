@@ -18,7 +18,7 @@ For *using* the game (controls, options, building, benchmark results) see the pr
 | Understand how a frame is drawn and shown on the 1-bit screen | [Playdate renderer](engine/renderer-pdr.md), [Playdate board → display.c](port/playdate.md#displayc) |
 | Understand the optimisation work | [Performance infrastructure](engine/perf-infrastructure.md), [Scripts and tools](tools.md) |
 | Learn Quake's own architecture | [Engine core](engine/core.md), [Client](engine/client.md), [Server](engine/server.md), [QuakeC](engine/quakec.md) |
-| Port to another board | [Shared platform layer → skeleton](port/overview.md#minimal-board-skeleton), [Other boards](port/other-boards.md) |
+| Port to another board | [Shared platform layer → skeleton](port/overview.md#minimal-board-skeleton) (the Playdate is the only board in the tree) |
 
 ## Architecture in one picture
 
@@ -54,9 +54,8 @@ One frame (single player), in `Host_Frame`: read buttons → run console command
 | Page | Covers |
 | --- | --- |
 | [Build system](build-system.md) | `CMakeLists.txt` (root, `winquake/`, `port/`), `platform.cmake` and every `PD_*` option, the Playdate board's CMake files, VS Code tasks |
-| [Shared platform layer](port/overview.md) | `include/quakembd.h`, `port/sys_port.c`, `vid_port.c`, `in_port.c`, `cd_null.c`, `snd.c`, `fio/fio_posix.c`, `fio/fio_fatfs.c` |
+| [Shared platform layer](port/overview.md) | `include/quakembd.h`, `port/sys_port.c`, `vid_port.c`, `in_port.c`, `cd_null.c`, `fio/fio_posix.c` |
 | [Playdate board](port/playdate.md) | `main.c`, `display.c`, `bluenoise.h`, `fio.c`, `pd_stdio.c`, `pd_compat.h`, `pd_port.h`, `keyqueue.*`, `autofire.*`, `weapons.*`, `snd.c`, `pdprof.c`, `.gitignore` |
-| [Other boards](port/other-boards.md) | `emulator/`, `rv32emu/`, `stm32h747i_disco/` (application files and vendor files) |
 | [Scripts and tools](tools.md) | `scripts/*` (install, bench, report, blue noise) and `tools/hostcheck/*` |
 
 ### The engine (`winquake/`)
@@ -79,7 +78,7 @@ One frame (single player), in `Host_Frame`: read buttons → run console command
 
 ### Not documented
 
-- [`lib/minifb`](../lib/minifb/): the third-party [MiniFB](https://github.com/emoon/minifb) windowing library, a git submodule used only by the desktop `emulator` board.
+- **Removed boards:** the upstream desktop, RISC-V and STM32 boards, their `lib/minifb` submodule and the files only they used were removed from the tree (see [Removed boards](build-system.md#removed-boards)); they are in the git history.
 - Generated or local directories: `build-*/`, `bench-results/`, `tools/hostcheck/out/` (all git-ignored).
 - `port/boards/playdate/Source/id1/pak0.pak`: the game data, not part of the source tree.
 
