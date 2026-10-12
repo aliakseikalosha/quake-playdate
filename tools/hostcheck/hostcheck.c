@@ -258,7 +258,7 @@ static int golden(const char *path)
 
 /*
  * HMENU=1: the options menu. Presses real keys (Key_Event) and checks navigation, the Crank speed
- * (crank_speed), Music (bgmenabled), Texture detail (d_mipcap), Interlaced (r_interlace), Dithering (pd_dither), Draw
+ * (crank_speed), Music (bgmenabled), Texture detail (d_mipcap), Light levels (r_lightlevels), Interlaced (r_interlace), Dithering (pd_dither), Draw
  * distance (r_maxdist) and Show FPS (scr_showfps) rows, that leaving the menu writes config.cfg with the archived cvars but no key
  * bindings, that the file reloads, and that "Reset to defaults" puts the option back.
  */
@@ -270,6 +270,7 @@ extern cvar_t crank_speed;
 extern cvar_t bgmenabled;
 extern cvar_t pd_maxfps;
 extern cvar_t pd_dither;
+extern cvar_t r_lightlevels;
 #include <menu.h>
 
 static int menu_fail;
@@ -539,7 +540,26 @@ static int menu_test(void)
 	MCHECK(d_mipcap.value == 0, "enter toggles too");
 
 	press(K_DOWNARROW);
-	MCHECK(options_cursor == 9, "down reaches the Interlaced row");
+	MCHECK(options_cursor == 9, "down reaches the Light levels row");
+	MCHECK(r_lightlevels.value == 16, "light levels start on medium (16)");
+	press(K_RIGHTARROW);
+	MCHECK(r_lightlevels.value == 64, "right: high (64)");
+	press(K_RIGHTARROW);
+	MCHECK(r_lightlevels.value == 64, "right at high stays there (no wrap-around)");
+	press(K_LEFTARROW);
+	MCHECK(r_lightlevels.value == 16, "left: medium (16)");
+	press(K_LEFTARROW);
+	MCHECK(r_lightlevels.value == 8, "left: low (8)");
+	press(K_LEFTARROW);
+	MCHECK(r_lightlevels.value == 4, "left: lowest (4)");
+	dump_lcd("lightlevels-lowest");
+	press(K_LEFTARROW);
+	MCHECK(r_lightlevels.value == 4, "left at lowest stays there (no wrap-around)");
+	press(K_ENTER);
+	MCHECK(r_lightlevels.value == 8, "enter steps up");
+
+	press(K_DOWNARROW);
+	MCHECK(options_cursor == 10, "down reaches the Interlaced row");
 	MCHECK(r_interlace.value == 1, "interlaced starts on");
 	dump_lcd("interlace-on");
 	press(K_RIGHTARROW);
@@ -551,7 +571,7 @@ static int menu_test(void)
 	MCHECK(r_interlace.value == 0, "enter toggles too");
 
 	press(K_DOWNARROW);
-	MCHECK(options_cursor == 10, "down reaches the Dithering row");
+	MCHECK(options_cursor == 11, "down reaches the Dithering row");
 	MCHECK(pd_dither.value == 0, "dithering starts on patterns (pd_dither 0)");
 	dump_lcd("dither-patterns");
 	press(K_RIGHTARROW);
@@ -573,7 +593,7 @@ static int menu_test(void)
 	MCHECK(pd_dither.value == 1, "right: bayer (what the file below saves)");
 
 	press(K_DOWNARROW);
-	MCHECK(options_cursor == 11, "down reaches the Draw distance row");
+	MCHECK(options_cursor == 12, "down reaches the Draw distance row");
 	dump_lcd("options-bottom");
 	MCHECK(r_maxdist.value == 512, "draw distance starts at 512");
 	press(K_RIGHTARROW);
@@ -592,7 +612,7 @@ static int menu_test(void)
 	MCHECK(r_maxdist.value == 768, "right x3: 768");
 
 	press(K_DOWNARROW);
-	MCHECK(options_cursor == 12, "down reaches the Max framerate row");
+	MCHECK(options_cursor == 13, "down reaches the Max framerate row");
 	MCHECK(pd_maxfps.value == 30, "max framerate starts at 30");
 	press(K_LEFTARROW);
 	MCHECK(pd_maxfps.value == 30, "left at 30 stays 30");
@@ -607,7 +627,7 @@ static int menu_test(void)
 	MCHECK(pd_maxfps.value == 50, "left: 50");
 
 	press(K_DOWNARROW);
-	MCHECK(options_cursor == 13, "down reaches the Show FPS row");
+	MCHECK(options_cursor == 14, "down reaches the Show FPS row");
 	MCHECK(scr_showfps.value == 1, "show fps starts on");
 	dump_lcd("options-showfps");
 	press(K_RIGHTARROW);
@@ -620,7 +640,7 @@ static int menu_test(void)
 	press(K_DOWNARROW);
 	MCHECK(options_cursor == 0, "down from the last row wraps to the first (no Video Options row here)");
 	press(K_UPARROW);
-	MCHECK(options_cursor == 13, "up from the first row lands on Show FPS");
+	MCHECK(options_cursor == 14, "up from the first row lands on Show FPS");
 
 	MCHECK(slurp(path) == NULL, "no config.cfg before leaving the menu");
 	press(K_ESCAPE);
@@ -628,6 +648,7 @@ static int menu_test(void)
 	cfg = slurp(path);
 	MCHECK(cfg != NULL, "leaving the menu writes config.cfg");
 	MCHECK(cfg && strstr(cfg, "d_mipcap \"0"), "config.cfg holds d_mipcap 0");
+	MCHECK(cfg && strstr(cfg, "r_lightlevels \"8"), "config.cfg holds r_lightlevels 8");
 	MCHECK(cfg && strstr(cfg, "r_interlace \"0"), "config.cfg holds r_interlace 0");
 	MCHECK(cfg && strstr(cfg, "pd_dither \"1"), "config.cfg holds pd_dither 1");
 	MCHECK(cfg && strstr(cfg, "r_maxdist \"768"), "config.cfg holds r_maxdist 768");
@@ -639,6 +660,7 @@ static int menu_test(void)
 	MCHECK(cfg && !strstr(cfg, "bind "), "config.cfg holds no key bindings");
 
 	Cvar_SetValue("d_mipcap", 1);
+	Cvar_SetValue("r_lightlevels", 64);
 	Cvar_SetValue("r_interlace", 1);
 	Cvar_SetValue("pd_dither", 0);
 	Cvar_SetValue("r_maxdist", 0);
@@ -649,6 +671,7 @@ static int menu_test(void)
 	cmd("exec config.cfg\n");
 	run(3);
 	MCHECK(d_mipcap.value == 0, "config.cfg restores d_mipcap 0 (what the next launch does)");
+	MCHECK(r_lightlevels.value == 8, "config.cfg restores r_lightlevels 8");
 	MCHECK(r_interlace.value == 0, "config.cfg restores r_interlace 0");
 	MCHECK(pd_dither.value == 1, "config.cfg restores pd_dither 1");
 	MCHECK(r_maxdist.value == 768, "config.cfg restores r_maxdist 768");
@@ -666,6 +689,7 @@ static int menu_test(void)
 	press(K_ENTER);
 	run(3);
 	MCHECK(d_mipcap.value == 1, "reset to defaults sets texture detail back to low");
+	MCHECK(r_lightlevels.value == 16, "reset to defaults sets light levels back to medium (16)");
 	MCHECK(r_interlace.value == 1, "reset to defaults turns interlaced on");
 	MCHECK(pd_dither.value == 0, "reset to defaults sets dithering back to patterns");
 	MCHECK(r_maxdist.value == 512, "reset to defaults sets the draw distance back to 512");
@@ -862,7 +886,7 @@ int main(int argc, char **argv)
 	 * the regression modes compare against the original picture, so switch them off there
 	 * (the menu test checks the real defaults) */
 	if (!getenv("HMENU"))
-		cmd("d_mipcap 0\nr_interlace 0\nr_maxdist 0\nscr_showfps 0\n");
+		cmd("d_mipcap 0\nr_lightlevels 64\nr_interlace 0\nr_maxdist 0\nscr_showfps 0\n");
 	if (getenv("HINTERLACE"))	/* HINTERLACE=1: every mode below with interlaced rendering */
 		cmd("r_interlace 1\n");
 	if (getenv("HCMD")) {		/* HCMD="...": console commands before any mode below */

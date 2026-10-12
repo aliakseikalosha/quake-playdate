@@ -19,6 +19,91 @@ byte	**pdr_lightptr;					/* per face slot: its block in the pool, NULL = none */
 /*
 ==============================================================================
 
+LIGHT LEVELS
+
+==============================================================================
+*/
+
+const unsigned short	*pdr_lightrows;
+static unsigned short	lightrows[3][64];	/* 4, 8 and 16 levels: row -> offset of the kept row */
+static const byte		*lightrows_cmap;	/* the colormap they were built for */
+
+/*
+Each colormap row's brightness as the LCD shows it (display.c: luma, stretched from 4..120 to
+full scale, gamma 0.8), averaged over the lit palette entries. The bright rows look nearly alike
+there (the stretch clips them to white) and the dark ones differ a lot, so the kept rows are the
+ones closest to n evenly spaced brightnesses from the brightest row to black: neighbouring kept
+levels differ as much as possible. Every row then uses the kept row nearest in brightness.
+*/
+static void BuildLightRows (const byte *cmap)
+{
+	float	lum[64];
+	int		r, i, k;
+
+	for (r=0 ; r<64 ; r++)
+	{
+		float	sum = 0;
+
+		for (i=0 ; i<224 ; i++)		/* (224..255 are full bright: the same in every row) */
+		{
+			const byte	*c = host_basepal + 3 * cmap[r * 256 + i];
+			float		v = ((77 * c[0] + 151 * c[1] + 28 * c[2]) >> 8) - 4.0f;
+
+			v = v <= 0 ? 0 : (v >= 116.0f ? 1.0f : v * (1.0f / 116.0f));
+			sum += powf (v, 0.8f);
+		}
+		lum[r] = sum;
+	}
+	for (k=0 ; k<3 ; k++)
+	{
+		int		n = 4 << k, kept[16], nkept = 0, j;
+
+		for (j=0 ; j<n ; j++)
+		{
+			float	target = lum[0] + (lum[63] - lum[0]) * j / (n - 1);
+			int		best = 0;
+
+			for (r=1 ; r<64 ; r++)
+				if (fabsf (lum[r] - target) < fabsf (lum[best] - target))
+					best = r;
+			if (!nkept || kept[nkept - 1] != best)
+				kept[nkept++] = best;
+		}
+		for (r=0 ; r<64 ; r++)
+		{
+			int		best = kept[0];
+
+			for (j=1 ; j<nkept ; j++)
+				if (fabsf (lum[r] - lum[kept[j]]) < fabsf (lum[r] - lum[best]))
+					best = kept[j];
+			lightrows[k][r] = (unsigned short)(best * 256);
+		}
+	}
+	lightrows_cmap = cmap;
+}
+
+void PDR_SetupLightLevels (void)
+{
+	extern cvar_t	r_lightlevels;
+	int		n = (int)r_lightlevels.value;
+
+#if defined(PD_PDR_AB) && PDR_EXP == 11
+	if (pd_asm_on)		/* A/B runs: the other frames draw all 64 levels */
+		n = 64;
+#endif
+	if (n <= 0 || n >= 64 || !host_basepal || !vid.colormap)
+	{
+		pdr_lightrows = NULL;
+		return;
+	}
+	if (lightrows_cmap != vid.colormap)
+		BuildLightRows (vid.colormap);
+	pdr_lightrows = lightrows[n <= 4 ? 0 : n <= 8 ? 1 : 2];
+}
+
+/*
+==============================================================================
+
 LIGHT STYLES
 
 ==============================================================================

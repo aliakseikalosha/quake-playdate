@@ -441,6 +441,7 @@ static void PDR_SetupFrame (void)
 	}
 
 	PDR_SetupFrustum ();
+	PDR_SetupLightLevels ();
 
 	pdr_minmip = d_mipcap.value;
 	if (pdr_minmip > 3)

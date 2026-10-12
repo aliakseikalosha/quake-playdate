@@ -10,11 +10,11 @@ instead, see [Original renderer](renderer-original.md).
 
 | File | Role | Lines |
 | --- | --- | --- |
-| [`pdr.h`](#pdrh) | Internal interface: constants, compact data structs, shared globals | 269 |
-| [`pdr_main.c`](#pdr_mainc) | `R_RenderView` and per-frame setup | 912 |
+| [`pdr.h`](#pdrh) | Internal interface: constants, compact data structs, shared globals | 279 |
+| [`pdr_main.c`](#pdr_mainc) | `R_RenderView` and per-frame setup | 913 |
 | [`pdr_world.c`](#pdr_worldc) | Brush data build, BSP walk, coverage mask, brush entities | 1734 |
-| [`pdr_span.c`](#pdr_spanc) | Textured, water and sky span drawing | 418 |
-| [`pdr_light.c`](#pdr_lightc) | Light blocks, light styles, dynamic lights, `LightPoint` | 542 |
+| [`pdr_span.c`](#pdr_spanc) | Textured, water and sky span drawing | 501 |
+| [`pdr_light.c`](#pdr_lightc) | Light levels, light blocks, light styles, dynamic lights, `LightPoint` | 627 |
 | [`pdr_alias.c`](#pdr_aliasc) | Alias models (monsters, items, the weapon) | 861 |
 | [`pdr_sprite.c`](#pdr_spritec) | Sprites and particles | 535 |
 | [`pdr_lowres.c`](#pdr_lowresc) | Hand-over of the half-resolution view to the display | 111 |
@@ -23,7 +23,7 @@ instead, see [Original renderer](renderer-original.md).
 
 ```
 R_RenderView()
- ├─ PDR_SetupFrame      axes, projection, frustum, interlace parity, PVS, dynamic lights
+ ├─ PDR_SetupFrame      axes, projection, frustum, light levels, interlace parity, PVS, dynamic lights
  ├─ PDR_SetupEntities   alias/sprite boxes → rows that need z; brush entities → sorted list
  ├─ PDR_SetupBmodels    clip each brush entity into the world leaves it touches
  ├─ PDR_DrawWorld       walk BSP front→back; coverage mask; record spans; draw faces
@@ -45,10 +45,13 @@ R_RenderView()
 - **Z only where it is read.** The z buffer is written only inside screen rectangles of alias
   models, sprites and the weapon (the whole view while particles are alive).
 - **Single precision only**, a polynomial `sin`/`cos`, no `double` in the frame.
+- **Light levels.** Below `high` (the "Light levels" option) the world uses only 4, 8 or 16 of
+  the colormap's 64 rows and PSX-style affine texturing, which cuts the colormap cache misses
+  that dominate span drawing (see [Light levels](#light-levels)).
 
 The picture is not bit-identical to the original: lighting is interpolated over 8-pixel runs
 instead of a 16×16 surface cache, and small alias models come out a pixel thinner. See the
-[README](../../README.md#renderer) for measured device results and
+[Renderer](../renderer.md) page for measured device results and
 [`tools.md`](../tools.md#toolshostcheckcompare-shotspy) for how the two are compared.
 
 ---
@@ -120,6 +123,8 @@ operation is a multi-microsecond library call here.
 ```c
 #ifdef PD_PDR_AB
 #define PDR_EXPERIMENT(n) (PDR_EXP == (n) && !pd_asm_on)   // variant B runs on alternate frames
+#elif defined(PDR_FORCE_EXP)                               // host checks: experiment n on every frame
+#define PDR_EXPERIMENT(n) ((n) == PDR_FORCE_EXP)
 #else
 #define PDR_EXPERIMENT(n) 0
 #endif
@@ -164,6 +169,7 @@ registers the render cvars.
 | `r_maxdist` | 512 | yes | "Draw distance" (0 = unlimited). |
 | `r_fullbright`, `r_drawentities`, `r_drawviewmodel`, `r_ambient` | 0 / 1 / 1 / 0 | no | As in Quake. |
 | `d_mipcap` | 1 | yes | "Texture detail": 1 = low, 0 = high. |
+| `r_lightlevels` | 16 | yes | "Light levels": 4 / 8 / 16 / 64 = lowest / low / medium / high. Defined and registered in `menu.c` (so the original renderer's build has it too); read by `PDR_SetupLightLevels`. |
 | `d_mipscale` | 1 | no | Mip selection scale. |
 
 ### Functions
@@ -174,7 +180,7 @@ registers the render cvars.
 | `R_InitTextures` | Builds the 16×16 checkerboard `r_notexture_mip` (4 mip levels). |
 | `R_NewMap` | Clears efrags and particles, resets light styles, builds the compact brush/light/alias data (`PDR_NewMapWorld`, `PDR_NewMapLight`, `PDR_NewMapAlias`). |
 | `R_SetVrect`, `R_ViewChanged` | Compute the view rectangle (aligned to the 2×2 / byte grid the low-res hand-over needs) and the projection constants, halved because the 3D view is half resolution. |
-| `PDR_SetupFrame` | Ambient light, dynamic-light list, clock copies, view axes, `r_viewleaf`, water-warp flag, interlace parity. |
+| `PDR_SetupFrame` | Ambient light, dynamic-light list, clock copies, view axes, `r_viewleaf`, water-warp flag, interlace parity, light levels (`PDR_SetupLightLevels`). |
 | `PDR_SetupFrustum` | World-space frustum planes and the box-corner indices used for fast box tests. |
 | `PDR_SetupEntities` | Walks the visible entity list: alias models and sprites are box-tested and their screen rectangles added to the z rows (`PDR_AddZRect`); brush entities are depth-sorted nearest first. It first calls `PDR_StoreStatics` and `PDR_ResetAliasSetups`. |
 | `PDR_StoreStatics` | The compact static-entity list: for each static entity (torches, flames) it remembers up to `STATIC_LEAFS` (4) leaf numbers from its efrags (`0xff` = more, follow the chain), so whether it is in the PVS is a few bit tests instead of an efrag walk. Visible ones are appended to `cl_visedicts`. |
@@ -312,7 +318,8 @@ void PDR_DrawSpan (const pdr_spanctx_t *c, int y, int x0, int x1)
 {
 	byte *dst = pdr_vbuf + y * pdr_stride + x0;
 	switch (c->kind) {
-	case PDR_SPAN_LIT:  SpanLit  (c, dst, y, x0, x1 - x0); break;
+	case PDR_SPAN_LIT:  if (pdr_lightrows) SpanLitAffine (c, dst, y, x0, x1 - x0);  // light levels below high
+	                    else SpanLit (c, dst, y, x0, x1 - x0); break;
 	case PDR_SPAN_TURB: SpanTurb (c, dst, y, x0, x1 - x0); break;
 	default:            SpanSky  (dst, y, x0, x1 - x0);    break;
 	}
@@ -322,7 +329,8 @@ void PDR_DrawSpan (const pdr_spanctx_t *c, int y, int x0, int x1)
 | Function | Purpose |
 | --- | --- |
 | `SampleLight` | Bilinear light from the block at 16.16 surface coordinates (the block is padded, so the right and bottom neighbours can be read at the edge with weight 0). |
-| `SpanLit` → `SpanLitPow2` / `SpanLitWrap` | `SpanLit` does the per-8-pixel perspective divide (`PDR_SUBDIV`) and steps `s`, `t` and the light between divides, then calls an inner loop: `*dst++ = cmap[((l >> 10) & 0x3f00) + tex[((t >> tshift) & tmask) + ((s >> 16) & smask)]]`. `SpanLitPow2` uses masks (texture width and height are powers of two, `c->tshift >= 0`); `SpanLitWrap` handles other sizes by wrapping `s` and `t` with a modulo. |
+| `SpanLit` → `SpanLitPow2` / `SpanLitWrap` | `SpanLit` does the per-8-pixel perspective divide (`PDR_SUBDIV`) and steps `s`, `t` and the light between divides, then calls an inner loop: `*dst++ = cmap[((l >> 10) & 0x3f00) + tex[((t >> tshift) & tmask) + ((s >> 16) & smask)]]`. `SpanLitPow2` uses masks (texture width and height are powers of two, `c->tshift >= 0`); `SpanLitWrap` handles other sizes by wrapping `s` and `t` with a modulo (and takes the `rows` table below, `NULL` here). |
+| `SpanLitAffine` → `SpanLitPow2Rows` / `SpanLitWrap` | The light-levels span (`pdr_lightrows` set). `s` and `t` are perspective-correct only at the span's two ends and stepped linearly in between (PSX-style; textures bend a little on long spans in steep perspective), and the light is still sampled every `PDR_ASUBDIV` (16) pixels along that path, since from the ends alone a lit patch in the middle of a long wall span went dark. The inner loop looks the colormap row up in the table: `cmap[rows[(l >> 18) & 63] + tex[...]]`. |
 | `SpanTurb` | Water: the sine-warped texture lookup (`pdr_sintable`). |
 | `SpanSky` / `Sky_uv_To_st` | Two-layer scrolling sky; `R_InitSky` splits the sky texture into its layers. |
 | `PDR_ZSpan` | Writes 1/z for a span (only where entities will test against it). |
@@ -360,6 +368,41 @@ surface-cache entry for the same face would be tens of kilobytes.
 c->light = PDR_FaceLight (fi->brush, fi->fi, f, &c->lconst);
 // c->light == NULL  →  the span uses the constant c->lconst instead of sampling a block
 ```
+
+### Light levels
+
+Span drawing is memory-bound: on the device a lit pixel cost about 0.67 µs (some 90 cycles), and
+much of it is the colormap lookup `cmap[row * 256 + texel]`, where the row is the light level.
+The colormap is 16 KB, as big as the data cache, so a frame whose light spreads over all 64 rows
+keeps missing it. The "Light levels" option (`r_lightlevels` 4 / 8 / 16 / 64) lets the world use
+only a few rows, and switches those frames to `SpanLitAffine` (see [`pdr_span.c`](#pdr_spanc)).
+
+```c
+extern const unsigned short *pdr_lightrows;   // row -> byte offset of the row used; NULL = all 64
+void PDR_SetupLightLevels (void);             // per frame, from PDR_SetupFrame
+```
+
+`BuildLightRows` (once per colormap) chooses the rows. It measures each row's brightness as the LCD
+shows it: the display's luma, stretched from 4..120 to full scale with gamma 0.8
+([`display.c`](../port/playdate.md)), averaged over the palette's lit entries 0..223. The display
+clips the bright end to white, so the bright rows look nearly alike while the dark ones differ a
+lot. The kept rows are the ones nearest to `n` evenly spaced brightnesses from the brightest row to
+black, so neighbouring kept levels differ as much as possible (they fall mostly in the dark half,
+where the world's pixels are: in the demos rows 40-63 hold about 80% of them), and every row maps to
+the kept row nearest in brightness.
+
+| Setting | `r_lightlevels` | Kept rows |
+| --- | --- | --- |
+| lowest | 4 | 0, 37, 52, 63 |
+| low | 8 | 0, 21, 34, 42, 48, 53, 58, 63 |
+| medium (default) | 16 | 0, 10, 20, 27, 33, 37, 41, 44, 47, 49, 52, 54, 56, 58, 60, 63 |
+| high | 64 | all (the original path: `SpanLit`, perspective every 8 pixels) |
+
+Device results, demos 1-3, world drawing compared with `high` in the same run
+(`-DPD_PDR_EXP=11 "-DPD_BENCH_CMDS=r_lightlevels N"`: the A/B frames with the switch on draw 64):
+medium −1.07…−1.57 ms, low −1.20…−1.78 ms, lowest −1.29…−1.96 ms per frame. Of that, the affine
+spans alone were worth about 0.8 ms and 16 rows instead of 64 alone about 0.7 ms (measured
+separately); sampling the light every 16 pixels costs back about 0.2 ms.
 
 ---
 

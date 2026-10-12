@@ -2,7 +2,7 @@
 
 [← Documentation index](README.md)
 
-Every file in the repository (201 files, 153 of them C, header or assembly source), with what it does, whether it is built, and a link to its detailed description. The **File** column opens the source; the **Docs** column opens the section that describes it. Names in the descriptions are links to the related files' sections, so you can follow a call from one file to the next.
+Every file in the repository (207 files, 153 of them C, header or assembly source), with what it does, whether it is built, and a link to its detailed description. The **File** column opens the source; the **Docs** column opens the section that describes it. Names in the descriptions are links to the related files' sections, so you can follow a call from one file to the next.
 
 - Looking for a file by name? Jump to [Find a file by name](#find-a-file-by-name).
 - Looking for what to read first? See [Start here](README.md#start-here) in the index.
@@ -68,7 +68,7 @@ Build entry point, licence and editor configuration.
 | File | Lines | Built | What it does | Docs |
 | --- | ---: | --- | --- | --- |
 | [`CMakeLists.txt`](../CMakeLists.txt) | 11 | build | Top-level build: selects the board, sets the global flags, adds [`winquake/CMakeLists.txt`](build-system.md#winquakecmakeliststxt-the-engine) and [`port/CMakeLists.txt`](build-system.md#portcmakeliststxt-shared-platform-layer). | [build](build-system.md#top-level-cmakeliststxt) |
-| [`README.md`](../README.md) | 207 | doc | The project overview for players and developers: controls, building, the renderer, settings, profiling and the host check. | [README](../README.md) |
+| [`README.md`](../README.md) | 49 | doc | The project overview: what it is, controls, and links to building and the guides in `docs/`. | [README](../README.md) |
 | [`gpl-2.0.txt`](../gpl-2.0.txt) | 339 | licence | The GNU GPL v2 text; Quake's source is released under it. | — |
 | [`.gitignore`](../.gitignore) | 8 | config | Keeps `build-*/`, `bench-results/` and `tools/hostcheck/out/` out of git. | [docs index](README.md#not-documented) |
 | [`.vscode/tasks.json`](../.vscode/tasks.json) | 56 | editor | VS Code tasks: simulator (debug) build, device build, release build, install over USB. | [build](build-system.md#editor-integration) |
@@ -116,7 +116,7 @@ Everything that touches the Playdate OS and its C API. Overview: [Playdate board
 | [`weapons.h`](../port/boards/playdate/weapons.h) | 17 | header | `pdq_weapons_scan`, `pdq_weapon_names`, `pdq_weapon_select`. | [playdate](port/playdate.md#weaponsc--weaponsh) |
 | [`snd.c`](../port/boards/playdate/snd.c) | 369 | always | The sound backend: each effect is decoded once to PCM and played on one of 8 Playdate `SamplePlayer`s; Quake's software mixer is not used. Implements [`sound.h`](engine/platform-interfaces.md#soundh). | [playdate](port/playdate.md#sndc) |
 | [`cd_pd.c`](../port/boards/playdate/cd_pd.c) | 258 | always | CD audio: track *N* is `id1/music/QuakeNN`, streamed by a `FilePlayer`; Music on/off (`bgmenabled`), volume, game pause, the system menu, and the `cd` command. Implements [`cdaudio.h`](engine/platform-interfaces.md#cdaudioh). | [playdate](port/playdate.md#cd_pdc) |
-| [`pdprof.c`](../port/boards/playdate/pdprof.c) | 1156 | profile | The on-device profiler: section timings, counters, stack probes and the timedemo benchmark driver, written to `prof.csv`. Macros in [`pdprof.h`](engine/perf-infrastructure.md#pdprofh). | [playdate](port/playdate.md#pdprofc) |
+| [`pdprof.c`](../port/boards/playdate/pdprof.c) | 1249 | profile | The on-device profiler: section timings, counters, stack probes, CPU/memory micro-benchmarks and the timedemo benchmark driver, written to `prof.csv`. Macros in [`pdprof.h`](engine/perf-infrastructure.md#pdprofh). | [playdate](port/playdate.md#pdprofc) |
 
 ## Playdate board: build files and data
 
@@ -207,7 +207,7 @@ Everything drawn on top of or around the 3D view. Page: [Screen, HUD, console an
 | [`console.h`](../winquake/console.h) | 46 | header | Console interface (`Con_*`). | [ui](engine/ui.md#consoleh--consolec) |
 | [`console.c`](../winquake/console.c) | 655 | always | The drop-down console and notify lines. | [ui](engine/ui.md#consoleh--consolec) |
 | [`menu.h`](../winquake/menu.h) | 39 | header | Menu entry points (`M_Init`, `M_Draw`, `M_Keydown`, `M_Menu_Options_Shortcut`). | [ui](engine/ui.md#menuh--menuc) |
-| [`menu.c`](../winquake/menu.c) | 3483 | always | All of Quake's menus, including the Playdate Options screen (Music, Crank speed, Dithering, Draw distance, Max framerate, Show FPS, …). | [ui](engine/ui.md#menuh--menuc) |
+| [`menu.c`](../winquake/menu.c) | 3519 | always | All of Quake's menus, including the Playdate Options screen (Music, Crank speed, Dithering, Draw distance, Max framerate, Show FPS, …). | [ui](engine/ui.md#menuh--menuc) |
 
 ## Server, world and physics
 
@@ -276,11 +276,11 @@ The default 3D renderer (`PD_NEW_RENDERER=ON`), written for the Playdate's memor
 
 | File | Lines | Built | What it does | Docs |
 | --- | ---: | --- | --- | --- |
-| [`pdr.h`](../winquake/pdr.h) | 269 | header · new renderer | The renderer's internal interface: constants, compact brush-data structs, shared globals, the span context. | [renderer-pdr](engine/renderer-pdr.md#pdrh) |
-| [`pdr_main.c`](../winquake/pdr_main.c) | 912 | new renderer | `R_RenderView` and the per-frame setup; owns the globals the original refresh had; interlacing. | [renderer-pdr](engine/renderer-pdr.md#pdr_mainc) |
+| [`pdr.h`](../winquake/pdr.h) | 279 | header · new renderer | The renderer's internal interface: constants, compact brush-data structs, shared globals, the span context. | [renderer-pdr](engine/renderer-pdr.md#pdrh) |
+| [`pdr_main.c`](../winquake/pdr_main.c) | 913 | new renderer | `R_RenderView` and the per-frame setup; owns the globals the original refresh had; interlacing. | [renderer-pdr](engine/renderer-pdr.md#pdr_mainc) |
 | [`pdr_world.c`](../winquake/pdr_world.c) | 1734 | new renderer | Builds the compact brush data at map load, walks the BSP front to back, keeps the per-row coverage mask, draws brush entities. | [renderer-pdr](engine/renderer-pdr.md#pdr_worldc) |
-| [`pdr_span.c`](../winquake/pdr_span.c) | 418 | new renderer | Draws one span of one face: textured, water and sky spans straight from the mip texture. | [renderer-pdr](engine/renderer-pdr.md#pdr_spanc) |
-| [`pdr_light.c`](../winquake/pdr_light.c) | 542 | new renderer | Light blocks in place of the surface cache; light styles, dynamic lights and `R_LightPoint`. | [renderer-pdr](engine/renderer-pdr.md#pdr_lightc) |
+| [`pdr_span.c`](../winquake/pdr_span.c) | 501 | new renderer | Draws one span of one face: textured, water and sky spans straight from the mip texture; the PSX-style affine span of the "Light levels" setting. | [renderer-pdr](engine/renderer-pdr.md#pdr_spanc) |
+| [`pdr_light.c`](../winquake/pdr_light.c) | 627 | new renderer | Light blocks in place of the surface cache; light styles, dynamic lights, `R_LightPoint` and the colormap rows kept by the "Light levels" setting. | [renderer-pdr](engine/renderer-pdr.md#pdr_lightc) |
 | [`pdr_alias.c`](../winquake/pdr_alias.c) | 861 | new renderer | Alias models (monsters, items, the weapon): transform, lighting and its own triangle rasterizer. | [renderer-pdr](engine/renderer-pdr.md#pdr_aliasc) |
 | [`pdr_sprite.c`](../winquake/pdr_sprite.c) | 535 | new renderer | Sprites (explosions, bubbles) and particles. | [renderer-pdr](engine/renderer-pdr.md#pdr_spritec) |
 | [`pdr_lowres.c`](../winquake/pdr_lowres.c) | 111 | new renderer | Hands the half-resolution 3D view to the display layer ([`display.c`](port/playdate.md#displayc)). | [renderer-pdr](engine/renderer-pdr.md#pdr_lowresc) |
@@ -382,6 +382,7 @@ Run on your computer around a device build. Page: [Scripts and tools](tools.md).
 | [`pd-bench.sh`](../scripts/pd-bench.sh) | 55 | tool | Installs a profiling build, runs it for a set time and fetches `prof.csv`. | [tools](tools.md#scriptspd-benchsh) |
 | [`pd-report.py`](../scripts/pd-report.py) | 134 | tool | Summarises and compares `prof.csv` files, including the `--ab` paired comparison. | [tools](tools.md#scriptspd-reportpy) |
 | [`gen-bluenoise.py`](../scripts/gen-bluenoise.py) | 102 | tool | Generates the blue-noise tile ([`bluenoise.h`](port/playdate.md#bluenoiseh)) with void-and-cluster. | [tools](tools.md#scriptsgen-bluenoisepy) |
+| [`gen-source-index.py`](../scripts/gen-source-index.py) | 615 | tool | Generates the [source code index](source-index.md) (this page) from its own file list, and checks the docs' links. | [tools](tools.md#scriptsgen-source-indexpy) |
 | [`__pycache__/pd-report.cpython-314.pyc`](../scripts/__pycache__/pd-report.cpython-314.pyc) | — | generated | Python bytecode cache of `pd-report.py`; not source. | — |
 
 ## Host check (`tools/hostcheck/`)
@@ -390,7 +391,7 @@ Runs the real engine and the real [`display.c`](port/playdate.md#displayc) on th
 
 | File | Lines | Built | What it does | Docs |
 | --- | ---: | --- | --- | --- |
-| [`hostcheck.c`](../tools/hostcheck/hostcheck.c) | 944 | host check | The test program: scripted scenes, menu and input tests, golden frame hashes, map tours and screenshot dumps. | [tools](tools.md#toolshostcheckhostcheckc) |
+| [`hostcheck.c`](../tools/hostcheck/hostcheck.c) | 968 | host check | The test program: scripted scenes, menu and input tests, golden frame hashes, map tours and screenshot dumps. | [tools](tools.md#toolshostcheckhostcheckc) |
 | [`build.sh`](../tools/hostcheck/build.sh) | 76 | tool | Builds [`hostcheck.c`](tools.md#toolshostcheckhostcheckc) against a source tree, in either renderer, with switches for the original code paths. | [tools](tools.md#toolshostcheckbuildsh) |
 | [`run.sh`](../tools/hostcheck/run.sh) | 15 | tool | Builds and runs the host check in its different modes. | [tools](tools.md#toolshostcheckrunsh) |
 | [`golden-compare.py`](../tools/hostcheck/golden-compare.py) | 24 | tool | Compares two golden hash files frame by frame. | [tools](tools.md#toolshostcheckgolden-comparepy) |
@@ -402,25 +403,30 @@ These pages. Start at the [documentation index](README.md).
 
 | File | Lines | Built | What it does | Docs |
 | --- | ---: | --- | --- | --- |
-| [`README.md`](../docs/README.md) | 115 | doc | The documentation index: reading paths, architecture, the page map and conventions. | [docs index](README.md) |
+| [`README.md`](../docs/README.md) | 128 | doc | The documentation index: reading paths, architecture, the page map and conventions. | [docs index](README.md) |
 | [`source-index.md`](../docs/source-index.md) | — | doc | This file. | — |
+| [`building.md`](../docs/building.md) | 52 | doc | How to build for the Simulator and the device, game data, music, the main performance options. | [building](building.md) |
+| [`renderer.md`](../docs/renderer.md) | 43 | doc | How the Playdate renderer differs from the original, and device timings. | [renderer](renderer.md) |
+| [`settings.md`](../docs/settings.md) | 39 | doc | The defaults and every Options menu setting, the dithering modes and their cost. | [settings](settings.md) |
+| [`profiling.md`](../docs/profiling.md) | 40 | doc | The on-device profiler and what it measured about the hardware. | [profiling](profiling.md) |
+| [`picture-check.md`](../docs/picture-check.md) | 23 | doc | Using the host check to show an optimisation does not change the picture. | [picture-check](picture-check.md) |
 | [`build-system.md`](../docs/build-system.md) | 292 | doc | CMake files, every `PD_*` option, release builds, which `pak0.pak` the `.pdx` gets, editor tasks. | [build](build-system.md) |
-| [`tools.md`](../docs/tools.md) | 276 | doc | The scripts and the host check harness. | [tools](tools.md) |
+| [`tools.md`](../docs/tools.md) | 304 | doc | The scripts and the host check harness. | [tools](tools.md) |
 | [`port/overview.md`](../docs/port/overview.md) | 285 | doc | The shared platform layer and the `qembd_*` board interface. | [overview](port/overview.md) |
-| [`port/playdate.md`](../docs/port/playdate.md) | 513 | doc | The Playdate board: main loop, display and dithering, files, sound, music, profiler. | [playdate](port/playdate.md) |
+| [`port/playdate.md`](../docs/port/playdate.md) | 515 | doc | The Playdate board: main loop, display and dithering, files, sound, music, profiler. | [playdate](port/playdate.md) |
 | [`port/game-data.md`](../docs/port/game-data.md) | 249 | doc | The shareware and the 2021 re-release `pak0.pak`: what the engine needs from them. | [game-data](port/game-data.md) |
 | [`engine/core.md`](../docs/engine/core.md) | 531 | doc | Engine core: start-up, memory, strings, files, cvars, commands, math, WADs. | [core](engine/core.md) |
 | [`engine/platform-interfaces.md`](../docs/engine/platform-interfaces.md) | 139 | doc | The video, input, sound and CD audio headers and the legacy x86 headers. | [platform-interfaces](engine/platform-interfaces.md) |
 | [`engine/client.md`](../docs/engine/client.md) | 294 | doc | The client: connection, parsing, input, demos, the camera, keys. | [client](engine/client.md) |
-| [`engine/ui.md`](../docs/engine/ui.md) | 257 | doc | Screen, HUD, console and menus (including the Options screen). | [ui](engine/ui.md) |
+| [`engine/ui.md`](../docs/engine/ui.md) | 260 | doc | Screen, HUD, console and menus (including the Options screen). | [ui](engine/ui.md) |
 | [`engine/server.md`](../docs/engine/server.md) | 244 | doc | The server, world collision and physics. | [server](engine/server.md) |
 | [`engine/quakec.md`](../docs/engine/quakec.md) | 258 | doc | The QuakeC virtual machine and its builtins. | [quakec](engine/quakec.md) |
 | [`engine/network.md`](../docs/engine/network.md) | 192 | doc | The network layer and drivers. | [network](engine/network.md) |
 | [`engine/models.md`](../docs/engine/models.md) | 171 | doc | BSP, MDL and SPR formats and the model loader. | [models](engine/models.md) |
-| [`engine/renderer-pdr.md`](../docs/engine/renderer-pdr.md) | 472 | doc | The Playdate renderer. | [renderer-pdr](engine/renderer-pdr.md) |
+| [`engine/renderer-pdr.md`](../docs/engine/renderer-pdr.md) | 515 | doc | The Playdate renderer. | [renderer-pdr](engine/renderer-pdr.md) |
 | [`engine/renderer-original.md`](../docs/engine/renderer-original.md) | 391 | doc | The original software renderer. | [renderer-original](engine/renderer-original.md) |
 | [`engine/perf-infrastructure.md`](../docs/engine/perf-infrastructure.md) | 249 | doc | Profiling, stack budgeting and the assembly. | [perf-infrastructure](engine/perf-infrastructure.md) |
-| [`demo.gif`](../docs/demo.gif) | — | doc | Demo 1 as the Playdate screen shows it (captured from the host check; used by the README). | [README](../README.md) |
+| [`demo.gif`](../docs/demo.gif) | — | doc | Demo 1 as the Playdate screen shows it (captured from the host check; used by the README). | [picture-check](picture-check.md) |
 | [`note/release/RELEASE_NOTES_0.3.0.md`](../note/release/RELEASE_NOTES_0.3.0.md) | 95 | doc | Release notes for version 0.3.0. | [RELEASE_NOTES_0.3.0.md](../note/release/RELEASE_NOTES_0.3.0.md) |
 
 ## Find a file by name
@@ -437,7 +443,7 @@ Every source and build file by name; each link opens the section that describes 
 
 **F** · [`fio.c`](port/playdate.md#fioc) · [`fio_posix.c`](port/overview.md#portfiofio_posixc)
 
-**G** · [`gen-bluenoise.py`](tools.md#scriptsgen-bluenoisepy) · [`.gitignore`](README.md#not-documented) · [`port/boards/playdate/.gitignore`](build-system.md#source) · [`.gitkeep`](build-system.md#source) · [`golden-compare.py`](tools.md#toolshostcheckgolden-comparepy) · [`gpl-2.0.txt`](../gpl-2.0.txt)
+**G** · [`gen-bluenoise.py`](tools.md#scriptsgen-bluenoisepy) · [`gen-source-index.py`](tools.md#scriptsgen-source-indexpy) · [`.gitignore`](README.md#not-documented) · [`port/boards/playdate/.gitignore`](build-system.md#source) · [`.gitkeep`](build-system.md#source) · [`golden-compare.py`](tools.md#toolshostcheckgolden-comparepy) · [`gpl-2.0.txt`](../gpl-2.0.txt)
 
 **H** · [`host.c`](engine/core.md#hostc) · [`host_cmd.c`](engine/core.md#host_cmdc) · [`hostcheck.c`](tools.md#toolshostcheckhostcheckc)
 
@@ -472,3 +478,4 @@ Every source and build file by name; each link opens the section that describes 
 - Generated or local directories, all git-ignored: `build-*/`, `bench-results/`, `tools/hostcheck/out/`, `port/boards/playdate/.build_number`, `port/boards/playdate/Source/pdex.*`.
 - `port/boards/playdate/Source/id1/` (your `pak0.pak`, the optional `pak0_demo.pak` and the music): game data, not part of the source tree. What the engine needs from the pak: [Game data](port/game-data.md).
 - The upstream desktop, RISC-V and STM32 boards and `lib/minifb`, removed from the tree: [Removed boards](build-system.md#removed-boards).
+

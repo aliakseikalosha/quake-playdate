@@ -74,8 +74,23 @@ static void SpanLitPow2 (byte *dst, const byte *tex, const byte *cmap, int s, in
 	} while (--n);
 }
 
-static void SpanLitWrap (byte *dst, const byte *tex, const byte *cmap, int s, int t, int l,
-						 int sstep, int tstep, int lstep, int n, int tw, int th)
+/* the same with fewer light levels: rows maps the colormap row to the one used */
+static void SpanLitPow2Rows (byte *dst, const byte *tex, const byte *cmap, const unsigned short *rows,
+							 int s, int t, int l, int sstep, int tstep, int lstep, int n,
+							 int tshift, int smask, int tmask)
+{
+	do
+	{
+		*dst++ = cmap[rows[(l >> 18) & 63] + tex[((t >> tshift) & tmask) + ((s >> 16) & smask)]];
+		s += sstep;
+		t += tstep;
+		l += lstep;
+	} while (--n);
+}
+
+/* textures whose size is not a power of two; rows as in SpanLitPow2Rows, or NULL */
+static void SpanLitWrap (byte *dst, const byte *tex, const byte *cmap, const unsigned short *rows,
+						 int s, int t, int l, int sstep, int tstep, int lstep, int n, int tw, int th)
 {
 	int		sw = tw << 16, tht = th << 16;
 
@@ -87,7 +102,7 @@ static void SpanLitWrap (byte *dst, const byte *tex, const byte *cmap, int s, in
 		t += tht;
 	do
 	{
-		*dst++ = cmap[((l >> 10) & 0x3f00) + tex[(t >> 16) * tw + (s >> 16)]];
+		*dst++ = cmap[(rows ? rows[(l >> 18) & 63] : ((l >> 10) & 0x3f00)) + tex[(t >> 16) * tw + (s >> 16)]];
 		s += sstep;
 		while (s >= sw)
 			s -= sw;
@@ -170,8 +185,73 @@ static void SpanLit (const pdr_spanctx_t *c, byte *dst, int y, int x0, int count
 			SpanLitPow2 (dst, c->tex, c->colormap, s + c->soff, t + c->toff, l, sstep, tstep, lstep, n,
 						 c->tshift, c->smask, c->tmask);
 		else
-			SpanLitWrap (dst, c->tex, c->colormap, s + c->soff, t + c->toff, l, sstep, tstep, lstep, n,
+			SpanLitWrap (dst, c->tex, c->colormap, NULL, s + c->soff, t + c->toff, l, sstep, tstep, lstep, n,
 						 c->tw, c->th);
+		dst += n;
+		s = snext;
+		t = tnext;
+		l = lnext;
+	} while (count > 0);
+}
+
+/*
+PSX-style span (fewer light levels, see pdr.h): s and t are exact only at the two ends of the
+span and stepped linearly in between, with no divide every 8 pixels, so textures swim a little on
+long spans in steep perspective. The light is still sampled every PDR_ASUBDIV pixels along that
+path (only additions to get there): from the ends alone, a lit patch in the middle of a long wall
+span went dark.
+*/
+#define PDR_ASUBDIV_SHIFT	4
+#define PDR_ASUBDIV			(1 << PDR_ASUBDIV_SHIFT)
+
+static void SpanLitAffine (const pdr_spanctx_t *c, byte *dst, int y, int x0, int count)
+{
+	float	sdivz, tdivz, zi, z, du = (float)x0, dv = (float)y;
+	int		s, t, l, sstep = 0, tstep = 0, n;
+
+	sdivz = c->sdivzorigin + dv*c->sdivzstepv + du*c->sdivzstepu;
+	tdivz = c->tdivzorigin + dv*c->tdivzstepv + du*c->tdivzstepu;
+	zi = c->ziorigin + dv*c->zistepv + du*c->zistepu;
+	z = (float)0x10000 / zi;
+	s = ClampS ((int)(sdivz * z) + c->sadjust, c->bbextents);
+	t = ClampS ((int)(tdivz * z) + c->tadjust, c->bbextentt);
+	l = SampleLight (c, s, t);
+	if (count > 1)
+	{
+		int		last = count - 1, s1, t1;
+		float	fl = (float)last, lz = (float)0x10000 / (zi + c->zistepu * fl);
+
+		s1 = ClampS ((int)((sdivz + c->sdivzstepu * fl) * lz) + c->sadjust, c->bbextents);
+		t1 = ClampS ((int)((tdivz + c->tdivzstepu * fl) * lz) + c->tadjust, c->bbextentt);
+		sstep = (s1 - s) / last;
+		tstep = (t1 - t) / last;
+	}
+
+	do
+	{
+		int		snext, tnext, lnext, lstep;
+
+		n = count >= PDR_ASUBDIV ? PDR_ASUBDIV : count;
+		count -= n;
+		if (count)
+		{
+			snext = s + sstep * PDR_ASUBDIV;
+			tnext = t + tstep * PDR_ASUBDIV;
+			lnext = SampleLight (c, snext, tnext);
+			lstep = (lnext - l) >> PDR_ASUBDIV_SHIFT;
+		}
+		else
+		{
+			snext = tnext = lnext = lstep = 0;
+			if (n > 1)
+				lstep = (SampleLight (c, s + sstep * (n - 1), t + tstep * (n - 1)) - l) / (n - 1);
+		}
+		if (c->tshift >= 0)
+			SpanLitPow2Rows (dst, c->tex, c->colormap, pdr_lightrows, s + c->soff, t + c->toff, l,
+							 sstep, tstep, lstep, n, c->tshift, c->smask, c->tmask);
+		else
+			SpanLitWrap (dst, c->tex, c->colormap, pdr_lightrows, s + c->soff, t + c->toff, l,
+						 sstep, tstep, lstep, n, c->tw, c->th);
 		dst += n;
 		s = snext;
 		t = tnext;
@@ -374,7 +454,10 @@ void PDR_DrawSpan (const pdr_spanctx_t *c, int y, int x0, int x1)
 	switch (c->kind)
 	{
 	case PDR_SPAN_LIT:
-		SpanLit (c, dst, y, x0, x1 - x0);
+		if (pdr_lightrows)
+			SpanLitAffine (c, dst, y, x0, x1 - x0);
+		else
+			SpanLit (c, dst, y, x0, x1 - x0);
 		break;
 	case PDR_SPAN_TURB:
 		SpanTurb (c, dst, y, x0, x1 - x0);

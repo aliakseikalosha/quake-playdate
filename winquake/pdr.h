@@ -150,6 +150,8 @@ extern qboolean	pdr_fullbright;
 #ifdef PD_PDR_AB
 extern int	pd_asm_on;
 #define PDR_EXPERIMENT(n)	(PDR_EXP == (n) && !pd_asm_on)
+#elif defined(PDR_FORCE_EXP)	/* host checks: experiment n on every frame */
+#define PDR_EXPERIMENT(n)	((n) == PDR_FORCE_EXP)
 #else
 #define PDR_EXPERIMENT(n)	0
 #endif
@@ -241,6 +243,14 @@ void PDR_InitLightCache (void *buf, int size);
 void PDR_FlushLightCache (void);
 void PDR_NewMapLight (void);
 void PDR_AnimateLights (void);
+
+/* Light levels ("Light levels" in the Options menu, cvar r_lightlevels 4/8/16/64). Below 64 the
+   world's lit spans use only that many colormap rows, picked for even steps of brightness on the
+   LCD, and are textured affinely between their two ends (PSX style): both cut the cache misses
+   that dominate span drawing. pdr_lightrows maps a colormap row to the byte offset of the row
+   used instead; NULL = all 64 rows, perspective correct every 8 pixels. */
+extern const unsigned short	*pdr_lightrows;
+void PDR_SetupLightLevels (void);
 void PDR_MarkBmodelLights (pdr_brush_t *b, int headnode);
 int PDR_LightPoint (const vec3_t p);
 extern int	pdr_lightstyle[MAX_LIGHTSTYLES];

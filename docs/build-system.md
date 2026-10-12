@@ -132,7 +132,7 @@ of `~/.Playdate/config`), picks defaults, and turns options into compile definit
 | `PD_ASM_AB` / `PD_ASM_CHECK` | OFF | same | Profiling aids for the assembly; need `PD_PROFILE`. |
 | `PD_STACK` | ON | `PD_STACK=1` | Put scratch buffers on the fast stack when there is room. |
 | `PD_STACK_AB` | OFF | same | A/B the stack buffers against static ones (needs `PD_PROFILE`). |
-| `PD_PDR_EXP` | 0 | `PD_PDR_AB=1`, `PDR_EXP=n` | Renderer experiment `n` on alternate frames (needs `PD_PROFILE`). |
+| `PD_PDR_EXP` | 0 | `PD_PDR_AB=1`, `PDR_EXP=n` | Renderer experiment `n` on alternate frames (needs `PD_PROFILE`). `11` times the "Light levels" setting against `high` (set the level with `PD_BENCH_CMDS="r_lightlevels 4"`). Host builds can force an experiment on every frame with `-DPDR_FORCE_EXP=n` (`OPT="-O1 -DPDR_FORCE_EXP=n" NEW=1 tools/hostcheck/build.sh`). |
 | `PD_PROFILE` | OFF | `PD_PROFILE=1` | On-device profiler writing `prof.csv`. |
 | `PD_PROFILE_FINE` | OFF | `PD_PROFILE_FINE=1` | More detailed sections (adds ≈ 2 ms/frame). |
 | `PD_BENCH` | OFF | `PD_BENCH=1` | Play the demos back as `timedemo`s. |

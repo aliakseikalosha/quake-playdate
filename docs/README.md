@@ -3,7 +3,7 @@
 This folder describes **every source file** of the project with its purpose, its main functions and types, and code
 examples taken from (or written against) the real code. The project is a [WinQuake](https://github.com/id-Software/Quake) port for the
 [Playdate](https://play.date/) handheld, derived from [sysprog21/quake-embedded](https://github.com/sysprog21/quake-embedded).
-For *using* the game (controls, options, building, benchmark results) see the project [README](../README.md).
+For *using* the game see the project [README](../README.md) (controls) and the guides below: [Building](building.md), [Renderer](renderer.md) (device results), [Settings](settings.md), [Profiling on the device](profiling.md) and [Checking that an optimisation does not change the picture](picture-check.md).
 The **[Source code index](source-index.md)** lists every file of the repository in one place, with what it does, whether it is built, and a link to the section that describes it in detail.
 
 > **What "port changes" means here.** Where a page says *"Port changes"* it describes how the file differs from the **original WinQuake source**
@@ -15,11 +15,14 @@ The **[Source code index](source-index.md)** lists every file of the repository 
 | If you want to… | Read |
 | --- | --- |
 | Find out what a file does, whether it is built, and where it is described | [Source code index](source-index.md) |
-| Build the game, understand the CMake options | [Build system](build-system.md) |
+| Build the game | [Building](building.md) |
+| Understand the CMake files and every option | [Build system](build-system.md) |
+| Know what each Options menu setting does and costs | [Settings](settings.md) |
 | Use the shareware or the 2021 re-release `pak0.pak`, or find out why the controls or levels misbehave with one | [Game data](port/game-data.md) |
 | See how the engine is wired to the Playdate | [Shared platform layer](port/overview.md), then [Playdate board](port/playdate.md) |
 | Understand how a frame is drawn and shown on the 1-bit screen | [Playdate renderer](engine/renderer-pdr.md), [Playdate board → display.c](port/playdate.md#displayc) |
-| Understand the optimisation work | [Performance infrastructure](engine/perf-infrastructure.md), [Scripts and tools](tools.md) |
+| Understand the optimisation work | [Profiling on the device](profiling.md), [Renderer](renderer.md), [Performance infrastructure](engine/perf-infrastructure.md), [Scripts and tools](tools.md) |
+| Check that a change does not alter the picture | [Checking that an optimisation does not change the picture](picture-check.md) |
 | Learn Quake's own architecture | [Engine core](engine/core.md), [Client](engine/client.md), [Server](engine/server.md), [QuakeC](engine/quakec.md) |
 | Port to another board | [Shared platform layer → skeleton](port/overview.md#minimal-board-skeleton) (the Playdate is the only board in the tree) |
 
@@ -58,6 +61,16 @@ One frame (single player), in `Host_Frame`: read buttons → run console command
 | --- | --- |
 | [Source code index](source-index.md) | Every file of the repository, grouped by directory and subsystem: what it does, whether it is built (and in which configuration), its size, and a link to its detailed section; an A-Z lookup |
 
+### Guides
+
+| Page | Covers |
+| --- | --- |
+| [Building](building.md) | Simulator and device builds, game data, music, build numbers, the main performance options |
+| [Renderer](renderer.md) | How the Playdate renderer differs from the original, picture differences, device timings |
+| [Settings](settings.md) | The defaults and every Options menu setting (texture detail, light levels, interlacing, dithering, draw distance, ...) |
+| [Profiling on the device](profiling.md) | The `PD_PROFILE` build, bench scripts, A/B runs, measured hardware costs |
+| [Checking that an optimisation does not change the picture](picture-check.md) | The host check: upscale invariants, golden hashes, screenshots, recording `demo.gif` |
+
 ### Build, platform and tools
 
 | Page | Covers |
@@ -66,7 +79,7 @@ One frame (single player), in `Host_Frame`: read buttons → run console command
 | [Shared platform layer](port/overview.md) | `include/quakembd.h`, `port/sys_port.c`, `vid_port.c`, `in_port.c`, `cd_null.c` (host check only), `fio/fio_posix.c` |
 | [Game data](port/game-data.md) | The shareware and the re-release `pak0.pak`: the built-in `default.cfg`, unused cvars, `MOVETYPE_BOUNCEMISSILE`, the alias setup cache fix |
 | [Playdate board](port/playdate.md) | `main.c`, `display.c`, `bluenoise.h`, `fio.c`, `pd_stdio.c`, `pd_compat.h`, `pd_port.h`, `keyqueue.*`, `autofire.*`, `weapons.*`, `snd.c`, `cd_pd.c`, `pdprof.c`, `.gitignore` |
-| [Scripts and tools](tools.md) | `scripts/*` (release build, install, bench, report, blue noise) and `tools/hostcheck/*` |
+| [Scripts and tools](tools.md) | `scripts/*` (release build, install, bench, report, blue noise, the source index generator) and `tools/hostcheck/*` |
 
 ### The engine (`winquake/`)
 
@@ -112,4 +125,4 @@ Both render at half resolution into a buffer the Playdate display layer dithers 
 - **Cvars** are shown as `name` (default; *archived* means saved in `config.cfg`).
 - Function and type names are exactly as in the source; hundreds of tiny functions (for example every `PF_*` builtin) are summarised in groups rather than listed one by one.
 - The pages describe the tree as of this writing, **including the staged, not-yet-committed changes** (the blue-noise and diffusion dithering modes, the *Show FPS* default, CD music and the *Music* option, the built-in `default.cfg`).
-- The [Source code index](source-index.md) lists every file of the repository; when a file is added, removed or renamed, add, remove or rename its row there as well as its section on the page that covers it.
+- The [Source code index](source-index.md) lists every file of the repository and is generated by [`scripts/gen-source-index.py`](tools.md#scriptsgen-source-indexpy). When a file is added, removed or renamed, change its row in that script (it stops and names any file that is missing), run it, and add or rename the file's section on the page that covers it; `--check` tells whether the index is current and every link in these pages resolves.

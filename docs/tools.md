@@ -4,7 +4,7 @@
 
 Two directories hold the helper programs:
 
-- [`scripts/`](../scripts/): things you run on your computer around a device build (release build, install, benchmark, report, generate data).
+- [`scripts/`](../scripts/): things you run on your computer: around a device build (release build, install, benchmark, report), to generate data (the blue-noise tile) and to generate the [source code index](source-index.md).
 - [`tools/hostcheck/`](../tools/hostcheck/): a harness that runs the real engine and the real Playdate display code *on the host* to prove an optimisation did not change the picture.
 
 | File | Purpose |
@@ -14,6 +14,7 @@ Two directories hold the helper programs:
 | [`scripts/pd-bench.sh`](#scriptspd-benchsh) | Run a profiling build on the device and fetch `prof.csv` |
 | [`scripts/pd-report.py`](#scriptspd-reportpy) | Summarise and compare `prof.csv` files |
 | [`scripts/gen-bluenoise.py`](#scriptsgen-bluenoisepy) | Generate the blue-noise dither tile |
+| [`scripts/gen-source-index.py`](#scriptsgen-source-indexpy) | Generate the [source code index](source-index.md) and check the docs' links |
 | [`tools/hostcheck/hostcheck.c`](#toolshostcheckhostcheckc) | The host-side test program |
 | [`tools/hostcheck/build.sh`](#toolshostcheckbuildsh) | Build it against a source tree |
 | [`tools/hostcheck/run.sh`](#toolshostcheckrunsh) | Build and run it |
@@ -105,7 +106,7 @@ scripts/pd-report.py --ab bench-results/a.csv        # A/B build: switch off vs 
 - Times are per frame in milliseconds of *game work*. The "wall" fps includes what the system does between frames.
 - Sections nest: `scan` contains `dsurf`, which contains `cache`/`spans`/`zspan`/`other`. Finer sections need `-DPD_PROFILE_FINE=ON`.
 - `load()` understands the line types `H` (header), `P` (per-frame row), `BENCH` (demo start/stop markers) and `L` (a mirrored console line, shown as "game says: …").
-- `--ab` works on builds with `PD_ASM_AB`, `PD_STACK_AB` or `PD_PDR_EXP`. It prints the frames with the switch off against those with it on, plus a **paired** column that compares each frame with its neighbour. Trust the paired column; the plain means of the two halves can differ by up to ≈ 1 ms in sections the switch does not touch.
+- `--ab` works on builds with `PD_ASM_AB`, `PD_STACK_AB` or `PD_PDR_EXP`. It prints the frames with the switch off against those with it on, plus a **paired** column that compares each frame with its neighbour. Trust the paired column; the plain means of the two halves can differ by up to ≈ 1 ms in sections the switch does not touch. The paired difference is *on minus off*; with `PD_PDR_EXP` the experiment runs on the **off** frames, so a positive number means the experiment is faster.
 
 ```python
 # the core of load(): rows are dicts keyed by the column names from the H line
@@ -131,6 +132,33 @@ The output is a C header: `#define BLUENOISE_SIZE 32` and `static const uint8_t 
 
 ---
 
+## `scripts/gen-source-index.py`
+
+Generates [`docs/source-index.md`](source-index.md): every file of the repository with what it does, whether it is built, its size, and a link to the section of these docs that describes it.
+
+```shell
+scripts/gen-source-index.py            # write docs/source-index.md
+scripts/gen-source-index.py --check    # change nothing; exit 1 if the index is out of date or a link is broken
+```
+
+Python 3, standard library only. It asks `git` for the tracked files and for the untracked ones that are not ignored, so it runs from a git checkout.
+
+**Where the text comes from.** The script holds the index's content: a list of `group(title, intro, base, [(path, built, description, doc), ...])` calls, one row per file. `doc` is the page and `#anchor` of the file's section, and `{name}` inside a description becomes a link to that file's section (`name` is the basename, or the path when two files share a basename, as with the four `CMakeLists.txt`). Computed: each file's line count, the **Docs** column's labels, the build table and the lookup by name.
+
+**What it stops on.** When the list and the repository disagree it prints the files and exits 1, writing nothing:
+
+```text
+scripts/gen-source-index.py: the file list in this script and the repository disagree.
+  in the repository but not listed (add a row to the right group):
+    winquake/new_file.c
+```
+
+After writing, it checks every relative link and `#anchor` in `README.md` and `docs/**/*.md` (fenced code blocks skipped, anchors as GitHub makes them from the headings) and exits 1 listing the broken ones, so a renamed heading is found here and not by a reader.
+
+**When to run it.** After adding, removing or renaming a file, or renaming a heading that a row points at: change the row, run the script, commit both. `--check` is for a pre-commit hook or CI. A change to the script itself changes its own line count in the index, so run it once more afterwards.
+
+---
+
 ## `tools/hostcheck/hostcheck.c`
 
 Host-side checks for the Playdate port. It links the real engine (`winquake/*.c`), the real
@@ -145,13 +173,13 @@ Host-side checks for the Playdate port. It links the real engine (`winquake/*.c`
 | --- | --- | --- |
 | *(none)* | default | Scripted play: load e1m1, walk, FPS counter, notify lines, console, every menu, view sizes, pause, FOV, weapons, scoreboard, crosshair, then demo1–3, then switch the dithering mode while playing. On every screen update it checks two invariants (below). Exit status 1 if either fails. |
 | `HGOLD=<file>` | golden | Plays demo1–3 with `timedemo` and writes one hash of the 1-bit LCD image per frame, plus hashes of the 8-bit render buffer and z buffer. |
-| `HMENU=1` | menu | Sends keys through the Options menu (crank speed, music, texture detail, interlaced, dithering, draw distance, max framerate, show FPS) and checks what it does and saves. |
+| `HMENU=1` | menu | Sends keys through the Options menu (crank speed, music, texture detail, light levels, interlaced, dithering, draw distance, max framerate, show FPS) and checks what it does and saves. The row numbers are hard-coded in `menu_test`: update them when a row is added. |
 | `HINPUT=1` | input | Checks the key bindings the port relies on (arrow keys, ctrl, space, `,` and `.`) exist and move, turn, fire and jump the player in e1m1, and survive `exec default.cfg`. Fails if the pak has no `default.cfg` and the built-in one (`winquake/defaultcfg.h`) is missing. |
 | `HFRAMES=<prefix>` | frames | Plays a demo in real time and writes the LCD as `<prefix>-NNNN.pbm`. `HDEMO`, `HSKIP`, `HEVERY` (default 2), `HCOUNT` tune it. Used to make `docs/demo.gif`. |
 | `HSHOTS=<dir>` | shots | Plays the demos and writes every `HEVERY`-th (default 25) frame's 3D view (`dD_NNNN.ppm`) and LCD picture. `HDEMOS="1 2 3"` picks demos. |
 | `HMAPS=1` | maps | Loads every shareware map (`start`, `e1m1`–`e1m8`) and turns, walks and fires in each: a crash and limits check. |
 | `HINTERLACE=1` | modifier | Any mode above with `r_interlace 1`. |
-| `HCMD="…"` | modifier | Console commands before any mode (e.g. `HCMD="pd_dither 2"`). |
+| `HCMD="…"` | modifier | Console commands before any mode (e.g. `HCMD="pd_dither 2"`). Every mode except `HMENU` first sets `d_mipcap 0`, `r_lightlevels 64`, `r_interlace 0`, `r_maxdist 0` and `scr_showfps 0`, so pictures stay comparable with the original renderer; use `HCMD` to test the defaults instead (e.g. `HCMD="r_lightlevels 16"`). |
 | `HLOG=1` | modifier | Print engine log lines. |
 
 The first argument is the frame count per scenario (default 150).

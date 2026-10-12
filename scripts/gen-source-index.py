@@ -1,19 +1,35 @@
 #!/usr/bin/env python3
-"""Generate docs/source-index.md for the quake-embedded repo.
+"""Generates docs/source-index.md: every file of the repository with what it does, whether it is
+built, its size, and a link to the section of the docs that describes it.
 
-Every file of the repo (git ls-files + untracked, not ignored) must appear in exactly one group below;
-the script fails otherwise. {key} in a description becomes a link to that file's detailed section
-(key = basename when unique, else the repo-relative path).  Line counts are computed.
+    scripts/gen-source-index.py            write docs/source-index.md
+    scripts/gen-source-index.py --check    change nothing; fail if the file is out of date
+
+The file list below (the group(...) calls) is the source of the index's text: edit it, then run the
+script. Everything else is computed:
+
+  - line counts, and the "Built" and "Docs" columns' links;
+  - {name} in a description becomes a link to that file's section (the name is the file's basename,
+    or its repo-relative path when the basename is not unique);
+  - the A-Z lookup and the build table.
+
+It stops, naming the files, when the list and the repository disagree (a file in `git ls-files` or
+untracked-but-not-ignored that is not listed, or a listed file that does not exist), and after
+writing it checks that every relative link and #anchor in README.md and docs/**/*.md resolves, so a
+renamed heading is found here and not by a reader. Python 3, standard library only; needs git.
 """
-import os, re, subprocess, sys
+import argparse, os, re, subprocess, sys
 from collections import OrderedDict
 
-ROOT = sys.argv[1]
-OUT = os.path.join(ROOT, 'docs', 'source-index.md')
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+OUT_REL = 'docs/source-index.md'
+OUT = os.path.join(ROOT, OUT_REL)
 
 # ---- short labels for the "Docs" column -------------------------------------------------------
 PAGES = {
-    'build-system.md': 'build', 'tools.md': 'tools', 'README.md': 'docs index',
+    'build-system.md': 'build', 'building.md': 'building', 'renderer.md': 'renderer',
+    'settings.md': 'settings', 'profiling.md': 'profiling', 'picture-check.md': 'picture-check',
+    'tools.md': 'tools', 'README.md': 'docs index',
     'port/overview.md': 'overview', 'port/playdate.md': 'playdate', 'port/game-data.md': 'game-data',
     'engine/core.md': 'core', 'engine/platform-interfaces.md': 'platform-interfaces',
     'engine/client.md': 'client', 'engine/ui.md': 'ui', 'engine/server.md': 'server',
@@ -33,7 +49,7 @@ def group(title, intro, base, entries):
 
 group('Top level', 'Build entry point, licence and editor configuration.', '', [
     ('CMakeLists.txt', 'build', 'Top-level build: selects the board, sets the global flags, adds {winquake/CMakeLists.txt} and {port/CMakeLists.txt}.', 'build-system.md#top-level-cmakeliststxt'),
-    ('README.md', 'doc', 'The project overview for players and developers: controls, building, the renderer, settings, profiling and the host check.', '../README.md'),
+    ('README.md', 'doc', 'The project overview: what it is, controls, and links to building and the guides in `docs/`.', '../README.md'),
     ('gpl-2.0.txt', 'licence', 'The GNU GPL v2 text; Quake\'s source is released under it.', None),
     ('.gitignore', 'config', 'Keeps `build-*/`, `bench-results/` and `tools/hostcheck/out/` out of git.', 'README.md#not-documented'),
     ('.vscode/tasks.json', 'editor', 'VS Code tasks: simulator (debug) build, device build, release build, install over USB.', 'build-system.md#editor-integration'),
@@ -69,7 +85,7 @@ group('Playdate board: sources (`port/boards/playdate/`)', 'Everything that touc
     ('port/boards/playdate/weapons.h', 'header', '`pdq_weapons_scan`, `pdq_weapon_names`, `pdq_weapon_select`.', 'port/playdate.md#weaponsc--weaponsh'),
     ('port/boards/playdate/snd.c', 'always', 'The sound backend: each effect is decoded once to PCM and played on one of 8 Playdate `SamplePlayer`s; Quake\'s software mixer is not used. Implements {sound.h}.', 'port/playdate.md#sndc'),
     ('port/boards/playdate/cd_pd.c', 'always', 'CD audio: track *N* is `id1/music/QuakeNN`, streamed by a `FilePlayer`; Music on/off (`bgmenabled`), volume, game pause, the system menu, and the `cd` command. Implements {cdaudio.h}.', 'port/playdate.md#cd_pdc'),
-    ('port/boards/playdate/pdprof.c', 'profile', 'The on-device profiler: section timings, counters, stack probes and the timedemo benchmark driver, written to `prof.csv`. Macros in {pdprof.h}.', 'port/playdate.md#pdprofc'),
+    ('port/boards/playdate/pdprof.c', 'profile', 'The on-device profiler: section timings, counters, stack probes, CPU/memory micro-benchmarks and the timedemo benchmark driver, written to `prof.csv`. Macros in {pdprof.h}.', 'port/playdate.md#pdprofc'),
 ])
 
 group('Playdate board: build files and data', 'How the `.pdx` is configured, built and packaged. Details: [Build system](build-system.md).', 'port/boards/playdate', [
@@ -192,8 +208,8 @@ group('Playdate renderer (`pdr_*`)', 'The default 3D renderer (`PD_NEW_RENDERER=
     ('winquake/pdr.h', 'header · new renderer', 'The renderer\'s internal interface: constants, compact brush-data structs, shared globals, the span context.', 'engine/renderer-pdr.md#pdrh'),
     ('winquake/pdr_main.c', 'new renderer', '`R_RenderView` and the per-frame setup; owns the globals the original refresh had; interlacing.', 'engine/renderer-pdr.md#pdr_mainc'),
     ('winquake/pdr_world.c', 'new renderer', 'Builds the compact brush data at map load, walks the BSP front to back, keeps the per-row coverage mask, draws brush entities.', 'engine/renderer-pdr.md#pdr_worldc'),
-    ('winquake/pdr_span.c', 'new renderer', 'Draws one span of one face: textured, water and sky spans straight from the mip texture.', 'engine/renderer-pdr.md#pdr_spanc'),
-    ('winquake/pdr_light.c', 'new renderer', 'Light blocks in place of the surface cache; light styles, dynamic lights and `R_LightPoint`.', 'engine/renderer-pdr.md#pdr_lightc'),
+    ('winquake/pdr_span.c', 'new renderer', 'Draws one span of one face: textured, water and sky spans straight from the mip texture; the PSX-style affine span of the "Light levels" setting.', 'engine/renderer-pdr.md#pdr_spanc'),
+    ('winquake/pdr_light.c', 'new renderer', 'Light blocks in place of the surface cache; light styles, dynamic lights, `R_LightPoint` and the colormap rows kept by the "Light levels" setting.', 'engine/renderer-pdr.md#pdr_lightc'),
     ('winquake/pdr_alias.c', 'new renderer', 'Alias models (monsters, items, the weapon): transform, lighting and its own triangle rasterizer.', 'engine/renderer-pdr.md#pdr_aliasc'),
     ('winquake/pdr_sprite.c', 'new renderer', 'Sprites (explosions, bubbles) and particles.', 'engine/renderer-pdr.md#pdr_spritec'),
     ('winquake/pdr_lowres.c', 'new renderer', 'Hands the half-resolution 3D view to the display layer ({display.c}).', 'engine/renderer-pdr.md#pdr_lowresc'),
@@ -267,6 +283,7 @@ group('Scripts (`scripts/`)', 'Run on your computer around a device build. Page:
     ('scripts/pd-bench.sh', 'tool', 'Installs a profiling build, runs it for a set time and fetches `prof.csv`.', 'tools.md#scriptspd-benchsh'),
     ('scripts/pd-report.py', 'tool', 'Summarises and compares `prof.csv` files, including the `--ab` paired comparison.', 'tools.md#scriptspd-reportpy'),
     ('scripts/gen-bluenoise.py', 'tool', 'Generates the blue-noise tile ({bluenoise.h}) with void-and-cluster.', 'tools.md#scriptsgen-bluenoisepy'),
+    ('scripts/gen-source-index.py', 'tool', 'Generates the [source code index](source-index.md) (this page) from its own file list, and checks the docs\' links.', 'tools.md#scriptsgen-source-indexpy'),
     ('scripts/__pycache__/pd-report.cpython-314.pyc', 'generated', 'Python bytecode cache of `pd-report.py`; not source.', None),
 ])
 
@@ -281,6 +298,11 @@ group('Host check (`tools/hostcheck/`)', 'Runs the real engine and the real {dis
 group('Documentation', 'These pages. Start at the [documentation index](README.md).', 'docs', [
     ('docs/README.md', 'doc', 'The documentation index: reading paths, architecture, the page map and conventions.', 'README.md'),
     ('docs/source-index.md', 'doc', 'This file.', None),
+    ('docs/building.md', 'doc', 'How to build for the Simulator and the device, game data, music, the main performance options.', 'building.md'),
+    ('docs/renderer.md', 'doc', 'How the Playdate renderer differs from the original, and device timings.', 'renderer.md'),
+    ('docs/settings.md', 'doc', 'The defaults and every Options menu setting, the dithering modes and their cost.', 'settings.md'),
+    ('docs/profiling.md', 'doc', 'The on-device profiler and what it measured about the hardware.', 'profiling.md'),
+    ('docs/picture-check.md', 'doc', 'Using the host check to show an optimisation does not change the picture.', 'picture-check.md'),
     ('docs/build-system.md', 'doc', 'CMake files, every `PD_*` option, release builds, which `pak0.pak` the `.pdx` gets, editor tasks.', 'build-system.md'),
     ('docs/tools.md', 'doc', 'The scripts and the host check harness.', 'tools.md'),
     ('docs/port/overview.md', 'doc', 'The shared platform layer and the `qembd_*` board interface.', 'port/overview.md'),
@@ -297,28 +319,40 @@ group('Documentation', 'These pages. Start at the [documentation index](README.m
     ('docs/engine/renderer-pdr.md', 'doc', 'The Playdate renderer.', 'engine/renderer-pdr.md'),
     ('docs/engine/renderer-original.md', 'doc', 'The original software renderer.', 'engine/renderer-original.md'),
     ('docs/engine/perf-infrastructure.md', 'doc', 'Profiling, stack budgeting and the assembly.', 'engine/perf-infrastructure.md'),
-    ('docs/demo.gif', 'doc', 'Demo 1 as the Playdate screen shows it (captured from the host check; used by the README).', '../README.md'),
+    ('docs/demo.gif', 'doc', 'Demo 1 as the Playdate screen shows it (captured from the host check; used by the README).', 'picture-check.md'),
     ('note/release/RELEASE_NOTES_0.3.0.md', 'doc', 'Release notes for version 0.3.0.', '../note/release/RELEASE_NOTES_0.3.0.md'),
 ])
 
 # ---- model ------------------------------------------------------------------------------------
 def repo_files():
-    out = subprocess.check_output(['git', 'ls-files'], cwd=ROOT, text=True).split('\n')
-    out += subprocess.check_output(['git', 'ls-files', '--others', '--exclude-standard'], cwd=ROOT, text=True).split('\n')
-    return sorted({f for f in out if f and os.path.exists(os.path.join(ROOT, f)) and f != '.DS_Store'})
+    try:
+        out = subprocess.check_output(['git', 'ls-files'], cwd=ROOT, text=True).split('\n')
+        out += subprocess.check_output(['git', 'ls-files', '--others', '--exclude-standard'], cwd=ROOT, text=True).split('\n')
+    except (OSError, subprocess.CalledProcessError) as e:
+        sys.exit(f'{sys.argv[0]}: needs git and a git checkout ({e})')
+    found = {f for f in out if f and os.path.exists(os.path.join(ROOT, f)) and f != '.DS_Store'}
+    found.add(OUT_REL)      # the index lists itself, so it need not exist yet on the first run
+    return sorted(found)
 
 files = repo_files()
 entries = OrderedDict()
 for gi, (_, _, _, es) in enumerate(G):
     for path, built, desc, doc in es:
-        assert path not in entries, f'duplicate entry {path}'
-        assert os.path.exists(os.path.join(ROOT, path)), f'no such file {path}'
+        if path in entries:
+            sys.exit(f'{sys.argv[0]}: {path} is listed twice')
         entries[path] = dict(built=built, desc=desc, doc=doc, group=gi)
 
 missing = [f for f in files if f not in entries]
 extra = [p for p in entries if p not in files]
 if missing or extra:
-    sys.exit(f'index and repo disagree:\n  not indexed: {missing}\n  not in repo: {extra}')
+    msg = [f'{sys.argv[0]}: the file list in this script and the repository disagree.']
+    if missing:
+        msg.append('  in the repository but not listed (add a row to the right group):')
+        msg += [f'    {f}' for f in missing]
+    if extra:
+        msg.append('  listed but not in the repository (remove or rename the row):')
+        msg += [f'    {p}' for p in extra]
+    sys.exit('\n'.join(msg))
 
 base_count = {}
 for p in entries:
@@ -488,6 +522,94 @@ w('- `port/boards/playdate/Source/id1/` (your `pak0.pak`, the optional `pak0_dem
 w('- The upstream desktop, RISC-V and STM32 boards and `lib/minifb`, removed from the tree: [Removed boards](build-system.md#removed-boards).')
 w('')
 
-with open(OUT, 'w', encoding='utf-8') as f:
-    f.write('\n'.join(out))
-print(f'wrote {OUT}: {total} files in {len(G)} groups')
+text = '\n'.join(out) + '\n'
+
+
+# ---- link check ---------------------------------------------------------------------------------
+def slugs(markdown):
+    """The #anchors GitHub gives the headings of a page (fenced code blocks have no headings)."""
+    seen, found, fence = {}, set(), False
+    for line in markdown.split('\n'):
+        if line.lstrip().startswith('```'):
+            fence = not fence
+            continue
+        m = None if fence else re.match(r'^#{1,6}\s+(.*?)\s*#*\s*$', line)
+        if not m:
+            continue
+        h = re.sub(r'\[([^\]]*)\]\([^)]*\)', r'\1', re.sub(r'<[^>]+>', '', m.group(1))).strip().lower()
+        a = re.sub(r'[^\w\- ]', '', h).replace(' ', '-')
+        n = seen.get(a, 0)
+        seen[a] = n + 1
+        found.add(a if n == 0 else f'{a}-{n}')
+    return found
+
+
+def broken_links(pages):
+    """pages: {repo-relative path: text}. Every relative link must name an existing file and, for a
+    markdown target, an existing heading."""
+    anchors = {os.path.normpath(os.path.join(ROOT, p)): slugs(t) for p, t in pages.items()}
+    bad, count = [], 0
+    for page, t in pages.items():
+        t = '\n'.join('' if f else l for l, f in zip(t.split('\n'), fenced_lines(t)))
+        for m in re.finditer(r'\]\(([^)\s]+)\)', t):
+            url = m.group(1)
+            if re.match(r'^[a-z]+:', url):
+                continue
+            count += 1
+            path, _, frag = url.partition('#')
+            target = os.path.normpath(os.path.join(ROOT, os.path.dirname(page), path)) if path else os.path.join(ROOT, page)
+            where = f'{page}:{t[:m.start()].count(chr(10)) + 1}'
+            if not os.path.exists(target):
+                bad.append(f'{where}: no such file: {url}')
+            elif frag and target.endswith('.md'):
+                if target not in anchors:       # a page outside README.md and docs/
+                    anchors[target] = slugs(open(target, encoding='utf-8').read())
+                if frag not in anchors[target]:
+                    bad.append(f'{where}: no such heading: {url}')
+    return bad, count
+
+
+def fenced_lines(text):
+    flags, fence = [], False
+    for line in text.split('\n'):
+        if line.lstrip().startswith('```'):
+            fence = not fence
+            flags.append(True)
+        else:
+            flags.append(fence)
+    return flags
+
+
+def doc_pages(index_text):
+    pages = {OUT_REL: index_text}
+    for p in files:
+        if (p == 'README.md' or p.startswith('docs/') and p.endswith('.md')) and p != OUT_REL:
+            pages[p] = open(os.path.join(ROOT, p), encoding='utf-8').read()
+    return pages
+
+
+# ---- write or check -----------------------------------------------------------------------------
+ap = argparse.ArgumentParser(description='Generate docs/source-index.md (see the top of this script).')
+ap.add_argument('--check', action='store_true', help='change nothing; exit 1 if the index is out of date or a link is broken')
+args = ap.parse_args()
+
+current = open(OUT, encoding='utf-8').read() if os.path.exists(OUT) else None
+bad, nlinks = broken_links(doc_pages(text))
+
+if args.check:
+    if current != text:
+        print(f'{OUT_REL} is out of date: run scripts/gen-source-index.py', file=sys.stderr)
+    for b in bad:
+        print(b, file=sys.stderr)
+    if current != text or bad:
+        sys.exit(1)
+    print(f'{OUT_REL} is up to date: {total} files, {nlinks} links checked')
+else:
+    if current != text:
+        with open(OUT, 'w', encoding='utf-8') as f:
+            f.write(text)
+    print(f'{"wrote" if current != text else "unchanged"} {OUT_REL}: {total} files in {len(G)} groups, {nlinks} links checked')
+    for b in bad:
+        print(b, file=sys.stderr)
+    if bad:
+        sys.exit(1)

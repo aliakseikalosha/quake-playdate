@@ -717,6 +717,98 @@ static void micro_math(void)
 }
 
 
+/*
+ * Float versus integer: is integer math cheaper on this core? Each case is timed in ns per
+ * instruction (the round trip: per int -> float -> int conversion). "chain" cases depend on the
+ * previous result (latency), the others do not (throughput). Then one perspective step of a
+ * textured span (1/z, s, t) done the float way and the integer way (reciprocal by UDIV, 64-bit
+ * multiplies), as compiled C.
+ */
+#define MI8(s) s s s s s s s s
+static void micro_intfloat(void)
+{
+	enum { N = 20000 };
+	float t0, t1, fa = 3.0f, fb = 1.0001f, fx = 1.7f, f0 = 0, f1 = 0, f2 = 0, f3 = 0;
+	uint32_t ia = 0x12345678u, ib = 3001u, ix = 7, i0 = 0, i1 = 0, i2 = 0, i3 = 0;
+	char line[400];
+	int i, n = 0;
+
+#define MI_TIME(name, ninstr, body) \
+	qembd_pd->system->resetElapsedTime(); \
+	t0 = pdprof_elapsed(); \
+	for (i = 0; i < N; i++) { body; } \
+	t1 = pdprof_elapsed(); \
+	n += snprintf(line + n, sizeof(line) - n, ",%s %.1f", name, (double)(t1 - t0) * 1e9 / ((double)N * (ninstr)))
+
+	n += snprintf(line + n, sizeof(line) - n, "MICRO,int-vs-float (ns per instruction)");
+	MI_TIME("vdiv chain", 8, asm volatile(MI8("vdiv.f32 %0, %1, %0\n") : "+t"(fx) : "t"(fa)));
+	MI_TIME("vdiv", 32, asm volatile(MI8("vdiv.f32 %0, %4, %5\n vdiv.f32 %1, %4, %5\n vdiv.f32 %2, %4, %5\n vdiv.f32 %3, %4, %5\n")
+		: "=&t"(f0), "=&t"(f1), "=&t"(f2), "=&t"(f3) : "t"(fa), "t"(fb)));
+	MI_TIME("sdiv 32/12bit", 32, asm volatile(MI8("sdiv %0, %4, %5\n sdiv %1, %4, %5\n sdiv %2, %4, %5\n sdiv %3, %4, %5\n")
+		: "=&r"(i0), "=&r"(i1), "=&r"(i2), "=&r"(i3) : "r"(ia), "r"(ib)));
+	ib = 40000;
+	MI_TIME("udiv 32/16bit", 32, asm volatile(MI8("udiv %0, %4, %5\n udiv %1, %4, %5\n udiv %2, %4, %5\n udiv %3, %4, %5\n")
+		: "=&r"(i0), "=&r"(i1), "=&r"(i2), "=&r"(i3) : "r"(0xffffffffu), "r"(ib)));
+	MI_TIME("vfma chain", 8, asm volatile(MI8("vfma.f32 %0, %1, %2\n") : "+t"(fx) : "t"(fb), "t"(fa)));
+	MI_TIME("mla chain", 8, asm volatile(MI8("mla %0, %0, %1, %2\n") : "+r"(ix) : "r"(ib), "r"(ia)));
+	MI_TIME("vmul", 32, asm volatile(MI8("vmul.f32 %0, %4, %5\n vmul.f32 %1, %4, %5\n vmul.f32 %2, %4, %5\n vmul.f32 %3, %4, %5\n")
+		: "=&t"(f0), "=&t"(f1), "=&t"(f2), "=&t"(f3) : "t"(fa), "t"(fb)));
+	MI_TIME("mul", 32, asm volatile(MI8("mul %0, %4, %5\n mul %1, %4, %5\n mul %2, %4, %5\n mul %3, %4, %5\n")
+		: "=&r"(i0), "=&r"(i1), "=&r"(i2), "=&r"(i3) : "r"(ia), "r"(ib)));
+	MI_TIME("smull", 16, asm volatile(MI8("smull %0, %1, %4, %5\n smull %2, %3, %4, %5\n")
+		: "=&r"(i0), "=&r"(i1), "=&r"(i2), "=&r"(i3) : "r"(ia), "r"(ib)));
+	MI_TIME("int>float>int round trip", 8, asm volatile(MI8("vmov %1, %0\n vcvt.f32.s32 %1, %1\n vcvt.s32.f32 %1, %1\n vmov %0, %1\n")
+		: "+r"(ix), "=&t"(f0)));
+	pf_line("%s", line);
+	micro_sink = ix + i0 + i1 + i2 + i3 + (uint32_t)(int)(fx + f0 + f1 + f2 + f3);
+
+	/* one span perspective step, float (SpanLit) and integer, 8 steps per iteration */
+	{
+		volatile float vin[3] = {0.0137f, -0.0071f, 0.0021f};
+		volatile int vini[3] = {1 << 29, -(1 << 28), 1 << 29};
+		float sdivz = vin[0], tdivz = vin[1], zi = vin[2], ds = 1e-5f, dt = 2e-5f, dz = 1e-6f;
+		int32_t A = vini[0], B = vini[1], Z = vini[2], dA = 4000, dB = -3000, dZ = 900;
+		uint32_t sum = 0;
+		int k;
+		double tf, ti;
+
+		qembd_pd->system->resetElapsedTime();
+		t0 = pdprof_elapsed();
+		for (i = 0; i < N; i++)
+			for (k = 0; k < 8; k++) {
+				float z;
+
+				sdivz += ds;
+				tdivz += dt;
+				zi += dz;
+				z = 65536.0f / zi;
+				sum += (uint32_t)(int)(sdivz * z) ^ (uint32_t)(int)(tdivz * z);
+			}
+		t1 = pdprof_elapsed();
+		tf = (double)(t1 - t0) * 1e9 / (N * 8.0);
+		qembd_pd->system->resetElapsedTime();
+		t0 = pdprof_elapsed();
+		for (i = 0; i < N; i++)
+			for (k = 0; k < 8; k++) {
+				int			sh;
+				uint32_t	R;
+
+				A += dA;
+				B += dB;
+				Z += dZ;
+				sh = __builtin_clz ((uint32_t)Z);
+				R = 0xffffffffu / (((uint32_t)Z << sh) >> 16);
+				sum += (uint32_t)(int32_t)(((int64_t)A * R) >> (40 - sh)) ^ (uint32_t)(int32_t)(((int64_t)B * R) >> (40 - sh));
+			}
+		t1 = pdprof_elapsed();
+		ti = (double)(t1 - t0) * 1e9 / (N * 8.0);
+		pf_line("MICRO,span-perspective-step (ns),float %.1f,integer %.1f", tf, ti);
+		micro_sink += sum;
+	}
+#undef MI_TIME
+}
+
+
 /* Same store/load loops on a small stack array (internal SRAM?) */
 static void micro_stack(void)
 {
@@ -834,6 +926,7 @@ static void micro(void)
 	micro_icache();
 	micro_stack();
 	micro_math();
+	micro_intfloat();
 	micro_overlap_kinds(micro_bss);
 	micro_pld(micro_bss);
 	micro_store_patterns(micro_bss);

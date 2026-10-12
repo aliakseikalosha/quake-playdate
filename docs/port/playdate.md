@@ -502,7 +502,9 @@ it uses `system->getElapsedTime()`, not the DWT cycle counter; a tick is 1/168 Â
 
 With `PD_BENCH`, `bench_start`/`bench_tick` play `demo1`â€¦`demo3` with `timedemo` and write
 `BENCH,<ms>,start|done|all-done,<demo>` markers; `PD_BENCH_CMDS` is run first. `micro_*` functions
-measure store/load/ALU/stack costs (the numbers behind the [device memory model](../engine/perf-infrastructure.md)).
+measure store/load/ALU/stack costs (the numbers behind the [device memory model](../engine/perf-infrastructure.md));
+`micro_intfloat` compares float and integer instructions (`MICRO,int-vs-float`, ns per instruction) and
+one span perspective step done both ways (`MICRO,span-perspective-step`).
 
 ```shell
 # end to end: build, install, run 105 s, fetch prof.csv, summarise

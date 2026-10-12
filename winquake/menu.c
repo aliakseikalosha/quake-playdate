@@ -1100,6 +1100,7 @@ enum
 	OPT_ALWAYSRUN,
 	OPT_AUTOFIRE,
 	OPT_TEXDETAIL,
+	OPT_LIGHTLEVELS,
 	OPT_INTERLACE,
 	OPT_DITHER,
 	OPT_MAXDIST,
@@ -1149,6 +1150,23 @@ static int M_MaxFpsStep (void)
 cvar_t	pd_dither = {"pd_dither", "0", true};
 static const char	*const dither_names[] = {"patterns", "bayer", "blue noise", "diffusion"};
 #define	NUM_DITHER_MODES	(int)(sizeof(dither_names) / sizeof(dither_names[0]))
+
+// light levels of the world (winquake/pdr_light.c): below 64 the new renderer uses only that many
+// colormap rows and PSX-style affine texturing, which is faster; lowest to highest
+cvar_t	r_lightlevels = {"r_lightlevels", "16", true};
+static const int	lightlevel_steps[] = {4, 8, 16, 64};
+static const char	*const lightlevel_names[] = {"lowest", "low", "medium", "high"};
+#define	NUM_LIGHTLEVEL_STEPS	(int)(sizeof(lightlevel_steps) / sizeof(lightlevel_steps[0]))
+
+static int M_LightLevelStep (void)
+{
+	int		i;
+
+	for (i=0 ; i<NUM_LIGHTLEVEL_STEPS - 1 ; i++)
+		if (r_lightlevels.value > 0 && r_lightlevels.value <= lightlevel_steps[i])
+			return i;
+	return NUM_LIGHTLEVEL_STEPS - 1;
+}
 
 static int M_DitherMode (void)
 {
@@ -1285,6 +1303,18 @@ void M_AdjustSliders (int dir)
 
 	case OPT_TEXDETAIL:	// low = d_mipcap 1, the sharpest mip level is never used
 		Cvar_SetValue ("d_mipcap", d_mipcap.value >= 1 ? 0 : 1);
+		break;
+
+	case OPT_LIGHTLEVELS:	// 4, 8, 16, 64, no wrap-around
+		{
+			int		step = M_LightLevelStep () + dir;
+
+			if (step < 0)
+				step = 0;
+			if (step >= NUM_LIGHTLEVEL_STEPS)
+				step = NUM_LIGHTLEVEL_STEPS - 1;
+			Cvar_SetValue ("r_lightlevels", lightlevel_steps[step]);
+		}
 		break;
 
 	case OPT_INTERLACE:	// draw every other row of the 3D view per frame
@@ -1437,6 +1467,10 @@ void M_Options_Draw (void)
 			else
 				M_OptPrint (OPT_VALUE_X, y, "high");
 			break;
+		case OPT_LIGHTLEVELS:
+			M_OptPrint (OPT_LABEL_X, y, "Light levels");
+			M_OptPrint (OPT_VALUE_X, y, (char *)lightlevel_names[M_LightLevelStep ()]);
+			break;
 		case OPT_INTERLACE:
 			M_OptPrint (OPT_LABEL_X, y, "Interlaced");
 			M_OptCheckbox (OPT_VALUE_X, y, r_interlace.value);
@@ -1505,6 +1539,7 @@ void M_Options_Key (int k)
 			// port options that default.cfg does not know about: back to their
 			// defaults (keep in step with the cvar definitions)
 			Cvar_SetValue ("d_mipcap", 1);
+			Cvar_SetValue ("r_lightlevels", 16);
 			Cvar_SetValue ("r_interlace", 1);
 			Cvar_SetValue ("pd_dither", 0);
 			Cvar_SetValue ("r_maxdist", 512);
@@ -3255,6 +3290,7 @@ void M_Init (void)
 	Cvar_RegisterVariable (&bgmenabled);
 	Cvar_RegisterVariable (&pd_maxfps);
 	Cvar_RegisterVariable (&pd_dither);
+	Cvar_RegisterVariable (&r_lightlevels);
 
 	Cmd_AddCommand ("menu_main", M_Menu_Main_f);
 	Cmd_AddCommand ("menu_singleplayer", M_Menu_SinglePlayer_f);

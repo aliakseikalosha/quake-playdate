@@ -6,7 +6,7 @@ The Playdate's CPU is fast compared with its memory. The performance work in thi
 what was *measured* about that memory system, and a small set of headers, assembly files and
 profiling hooks make the work safe and repeatable. This page describes those files. How the
 optimisations are switched on is in the [build system](../build-system.md#options); the full list
-of measured costs is in the project [README](../../README.md#profiling-on-the-device).
+of measured costs is in [Profiling on the device](../profiling.md).
 
 | File | Role |
 | --- | --- |
