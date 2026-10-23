@@ -134,7 +134,7 @@ byte    *Mod_LeafPVS (mleaf_t *leaf, model_t *model);          // that leaf's vi
 
 | Function | Purpose |
 | --- | --- |
-| `Mod_ForName(name, crash)` / `Mod_FindName` / `Mod_LoadModel` | Find a slot by name in `mod_known[]` (`MAX_MOD_KNOWN` 256), load the file with `COM_LoadStackFile` / `COM_LoadHunkFile`, dispatch on the 4-byte header (`IDPOLYHEADER`, `IDSPRITEHEADER`, otherwise BSP). |
+| `Mod_ForName(name, crash)` / `Mod_FindName` / `Mod_LoadModel` | Find a slot by name in `mod_known[]` (`MAX_MOD_KNOWN` 384; 256 in the original), load the file with `COM_LoadStackFile` / `COM_LoadHunkFile`, dispatch on the 4-byte header (`IDPOLYHEADER`, `IDSPRITEHEADER`, otherwise BSP). |
 | `Mod_LoadBrushModel` | Loads each lump in turn: `Mod_LoadVertexes`, `Mod_LoadEdges`, `Mod_LoadSurfedges`, `Mod_LoadTextures`, `Mod_LoadLighting`, `Mod_LoadPlanes`, `Mod_LoadTexinfo`, `Mod_LoadFaces`, `Mod_LoadMarksurfaces`, `Mod_LoadVisibility`, `Mod_LoadLeafs`, `Mod_LoadNodes` (`Mod_SetParent`), `Mod_LoadClipnodes`, `Mod_MakeHull0`, `Mod_LoadEntities`, `Mod_LoadSubmodels`; then splits the file into one `model_t` per submodel. |
 | `Mod_LoadTextures` | Reads the mip textures, loads the sky specially (`R_InitSky`), and links animated textures (`+0name`, `+1name` … and alternates `+aname`). |
 | `CalcSurfaceExtents(s)` | A face's texture bounds, rounded to 16-texel lightmap cells. |
@@ -151,7 +151,7 @@ aliashdr_t *hdr = Mod_Extradata (m);          // reloads from the pak if the cac
 ```
 
 **What this port changed:** `needload` is now a simple boolean instead of the original three-state value (`NL_PRESENT` / `NL_NEEDS_LOADED` / `NL_UNREFERENCED`). Model slots are never recycled: running out of `mod_known` is an error
-(`mod_numknown == MAX_MOD_KNOWN`) rather than evicting an unreferenced one. Alias models evicted from the cache are reloaded on demand. `Mod_PointInLeaf` takes a `const vec3_t`; `COM_FileBase` takes an output size;
+(`mod_numknown == MAX_MOD_KNOWN`) rather than evicting an unreferenced one. The table was raised from 256 to 384 for the mission packs, which overflowed it after a few levels (Scourge of Armagon needs ~312 names in a session, see [Mods and mission packs](../port/mods.md#memory)); bringing back the original's recycling of unreferenced slots would be the alternative, but the Playdate renderer keeps model pointers between frames (`pdr_alias.c`). Alias models evicted from the cache are reloaded on demand. `Mod_PointInLeaf` takes a `const vec3_t`; `COM_FileBase` takes an output size;
 `Mod_LoadTexinfo` copies the `vecs[2][4]` array element-by-element; maths is single-precision (`floorf`, `ceilf`).
 
 ---

@@ -19,6 +19,7 @@ The **[Source code index](source-index.md)** lists every file of the repository 
 | Understand the CMake files and every option | [Build system](build-system.md) |
 | Know what each Options menu setting does and costs | [Settings](settings.md) |
 | Use the shareware or the 2021 re-release `pak0.pak`, or find out why the controls or levels misbehave with one | [Game data](port/game-data.md) |
+| Play a mod or a mission pack | [Mods and mission packs](port/mods.md) |
 | See how the engine is wired to the Playdate | [Shared platform layer](port/overview.md), then [Playdate board](port/playdate.md) |
 | Understand how a frame is drawn and shown on the 1-bit screen | [Playdate renderer](engine/renderer-pdr.md), [Playdate board → display.c](port/playdate.md#displayc) |
 | Understand the optimisation work | [Profiling on the device](profiling.md), [Renderer](renderer.md), [Performance infrastructure](engine/perf-infrastructure.md), [Scripts and tools](tools.md) |
@@ -78,6 +79,7 @@ One frame (single player), in `Host_Frame`: read buttons → run console command
 | [Build system](build-system.md) | `CMakeLists.txt` (root, `winquake/`, `port/`), `platform.cmake` and every `PD_*` option, the Playdate board's CMake files (`pdx_*.cmake`, `toolchain.cmake`), VS Code tasks |
 | [Shared platform layer](port/overview.md) | `include/quakembd.h`, `port/sys_port.c`, `vid_port.c`, `in_port.c`, `cd_null.c` (host check only), `fio/fio_posix.c` |
 | [Game data](port/game-data.md) | The shareware and the re-release `pak0.pak`: the built-in `default.cfg`, unused cvars, `MOVETYPE_BOUNCEMISSILE`, the alias setup cache fix |
+| [Mods and mission packs](port/mods.md) | Game folders next to `id1`: the Mods menu, `game.txt`, launch arguments, the mission packs' weapons and autofire, the release build, what was tested |
 | [Playdate board](port/playdate.md) | `main.c`, `display.c`, `bluenoise.h`, `fio.c`, `pd_stdio.c`, `pd_compat.h`, `pd_port.h`, `keyqueue.*`, `autofire.*`, `weapons.*`, `snd.c`, `cd_pd.c`, `pdprof.c`, `.gitignore` |
 | [Scripts and tools](tools.md) | `scripts/*` (release build, install, bench, report, blue noise, the source index generator) and `tools/hostcheck/*` |
 

@@ -23,6 +23,7 @@
 #include <sys/stat.h>
 #include <fcntl.h>
 #include <errno.h>
+#include <dirent.h>
 
 int Sys_FileOpenRead(char *path, int *handle)
 {
@@ -87,6 +88,27 @@ int	Sys_FileTime(char *path)
 void Sys_mkdir(char *path)
 {
 	mkdir(path, 0777);
+}
+
+int Sys_ListDir(char *path, void (*func)(char *name, void *data), void *data)
+{
+	char full[1024], name[260];
+	struct dirent *e;
+	struct stat st;
+	DIR *d = opendir(path);
+
+	if (!d)
+		return -1;
+	while ((e = readdir(d)) != NULL) {
+		if (e->d_name[0] == '.')
+			continue;
+		snprintf(full, sizeof(full), "%s/%s", path, e->d_name);
+		snprintf(name, sizeof(name), "%s%s", e->d_name,
+				 stat(full, &st) == 0 && S_ISDIR(st.st_mode) ? "/" : "");
+		func(name, data);
+	}
+	closedir(d);
+	return 0;
 }
 
 void Sys_FileSync(int handle)

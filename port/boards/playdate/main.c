@@ -14,6 +14,11 @@
  *                   autofire is toggled there); "Weapon" lists the weapons you
  *                   can use now.
  * While a demo is playing (title screen) A and B open Quake's menu.
+ *
+ * Mods and mission packs: Quake's main menu lists the game folders next to id1 (Mods) and
+ * restarts the game in the one picked; Data/game.txt remembers it for the next launches.
+ * Launch arguments (Simulator command line, `run` on the device console) are Quake's own command
+ * line instead, e.g. "-game mymod" or "-hipnotic". Holding B while the game starts ignores both.
  */
 
 #include <setjmp.h>
@@ -87,12 +92,124 @@ void *qembd_allocmain(size_t size)
 	 * which truncates those offsets, so keep the heap in static storage.
 	 * (The device is 32-bit and allocates from the system heap below.)
 	 */
-	static byte pool[8 * 1024 * 1024] __attribute__((aligned(16)));
+	static byte pool[12 * 1024 * 1024] __attribute__((aligned(16)));	/* DEFAULT_MEM_SIZE fits */
 
 	return size <= sizeof(pool) ? pool : NULL;
 #else
 	return qembd_pd->system->realloc(NULL, size);
 #endif
+}
+
+/* ---------------------------------------------------------- game folder */
+
+#define GAME_FILE "game.txt" /* in Data: the game folder the Mods menu picked; absent = id1 only */
+#define MAX_ARGS 16
+
+static char game_dir[MAX_QPATH]; /* the folder Quake started in, "" = id1 only */
+
+static void no_entry(const char *name, void *ud)
+{
+	(void)name;
+	(void)ud;
+}
+
+static int folder_exists(const char *dir)
+{
+	return qembd_pd->file->listfiles(dir, no_entry, NULL, 0) == 0;
+}
+
+/* The folder in GAME_FILE, or "" */
+static void read_game_file(char *out, int size)
+{
+	SDFile *f = qembd_pd->file->open(GAME_FILE, kFileReadData);
+	int n = 0;
+
+	if (f)
+	{
+		n = qembd_pd->file->read(f, out, size - 1);
+		qembd_pd->file->close(f);
+	}
+	out[n < 0 ? 0 : n] = '\0';
+	out[strcspn(out, "\r\n")] = '\0';
+}
+
+/* The Mods menu's choice: remember it and start again (kEventTerminate saves the options first) */
+void qembd_restart(const char *gamedir)
+{
+	SDFile *f;
+
+	if (gamedir[0] && (f = qembd_pd->file->open(GAME_FILE, kFileWrite)))
+	{
+		qembd_pd->file->write(f, gamedir, strlen(gamedir));
+		qembd_pd->file->close(f);
+	}
+	else
+		qembd_pd->file->unlink(GAME_FILE, 0);
+	qembd_pd->system->restartGame("");
+}
+
+/*
+ * Quake's command line: the launch arguments if there are any, else "-game <folder>" from
+ * GAME_FILE. B held down at start-up skips both and forgets GAME_FILE, so a mod that cannot
+ * start (or crashes the device) does not lock the game out.
+ */
+static int build_args(char **argv)
+{
+	static char arg0[] = "quake", game_opt[] = "-game";
+	static char buf[256];
+	PDButtons held;
+	const char *launch = qembd_pd->system->getLaunchArgs(NULL);
+	int argc = 0;
+
+	argv[argc++] = arg0;
+	game_dir[0] = '\0';
+
+	qembd_pd->system->getButtonState(&held, NULL, NULL);
+	if (held & kButtonB)
+	{
+		qembd_pd->file->unlink(GAME_FILE, 0);
+		argv[argc] = NULL;
+		return argc;
+	}
+
+	if (launch && launch[0])
+	{
+		char *p = buf;
+
+		strncpy(buf, launch, sizeof(buf) - 1);
+		buf[sizeof(buf) - 1] = '\0';
+		while (argc < MAX_ARGS)
+		{
+			p += strspn(p, " \t");
+			if (!*p)
+				break;
+			argv[argc++] = p;
+			p += strcspn(p, " \t");
+			if (*p)
+				*p++ = '\0';
+		}
+		for (int i = 1; i < argc; i++)
+		{
+			if (!strcmp(argv[i], "-game") && i + 1 < argc)
+				strncpy(game_dir, argv[i + 1], sizeof(game_dir) - 1);
+			else if (!strcmp(argv[i], "-hipnotic") || !strcmp(argv[i], "-rogue"))
+				strncpy(game_dir, argv[i] + 1, sizeof(game_dir) - 1);
+		}
+	}
+	else
+	{
+		read_game_file(buf, sizeof(buf));
+		if (buf[0] && strlen(buf) < sizeof(game_dir) && folder_exists(buf))
+		{
+			strcpy(game_dir, buf);
+			argv[argc++] = game_opt;
+			argv[argc++] = game_dir;
+		}
+		else if (buf[0])
+			qembd_pd->file->unlink(GAME_FILE, 0); /* the folder is gone */
+	}
+	argv[argc] = NULL;
+	return argc;
 }
 
 /* ------------------------------------------------------------- messages */
@@ -126,7 +243,15 @@ void qembd_log(const char *text)
 /* Sys_Error: report on screen (and console) and stop running Quake */
 void qembd_fatal(const char *msg)
 {
+	static char buf[512];
+
 	qembd_pd->system->logToConsole("Quake error: %s", msg);
+	if (game_dir[0])
+	{
+		snprintf(buf, sizeof(buf), "%s\n\nHold B while starting the game to play Quake without %s.",
+				 msg, COM_GameTitle(game_dir));
+		msg = buf;
+	}
 	stop_with_message("Quake stopped:", msg);
 	/* Not reached from inside a frame, but Sys_Error must not return */
 	for (;;)
@@ -298,14 +423,14 @@ static int update(void *ud)
 
 	case ST_INIT:
 	{
-		static char arg0[] = "quake";
-		static char *argv[] = {arg0, NULL};
+		static char *argv[MAX_ARGS + 1];
+		int argc = build_args(argv);
 
 		if (setjmp(frame_jmp))
 			return 1;
 		in_frame = 1;
 		pdprof_stage("qembd_init begin");
-		if (qembd_init(1, argv) != 0)
+		if (qembd_init(argc, argv) != 0)
 		{
 			in_frame = 0;
 			stop_with_message("Quake failed to start",

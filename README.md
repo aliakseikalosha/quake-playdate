@@ -35,6 +35,10 @@ You run by default; the Options menu's "Always Run" turns that off. While the ti
 - **Options** opens Quake's Options screen directly (see [Settings](docs/settings.md)). B leaves it and returns straight to the game; the same screen reached through Game Menu goes back to Quake's main menu first.
 - **Weapon** picks a weapon you own and have ammo for. It appears during play once you can choose between two or more. There is no weapon-cycling button, so this is how you switch.
 
+## Mods and mission packs
+
+Copy a mod's or mission pack's folder (`hipnotic`, `rogue`, `mymod`, ...) next to `id1` in the game's Data folder, then pick it in Quake's main menu under **Mods**: the game restarts in it and keeps starting there until you pick Quake again. Hold B while the game starts to start plain Quake. Scourge of Armagon and Dissolution of Eternity get their own status bar, New Game episodes and Weapon menu entries. See [Mods and mission packs](docs/port/mods.md).
+
 ## Building
 
 Requires the [Playdate SDK](https://play.date/dev/) and your own `pak0.pak` (the shareware one is fine). The steps, where the game data and music go, and the CMake options are in **[Building](docs/building.md)**.
@@ -44,6 +48,7 @@ Requires the [Playdate SDK](https://play.date/dev/) and your own `pak0.pak` (the
 - [Building](docs/building.md): Simulator and device builds, game data, music, performance options.
 - [Renderer](docs/renderer.md): how the Playdate renderer differs from the original, and device timings.
 - [Settings](docs/settings.md): every Options menu setting, the dithering modes and their cost.
+- [Mods and mission packs](docs/port/mods.md): installing them, the Mods menu, what was tested.
 - [Profiling on the device](docs/profiling.md): the on-device profiler and what it showed about the hardware.
 - [Checking that an optimisation does not change the picture](docs/picture-check.md): the host check harness.
 - [Source documentation](docs/README.md): every source file, starting from the [source code index](docs/source-index.md).

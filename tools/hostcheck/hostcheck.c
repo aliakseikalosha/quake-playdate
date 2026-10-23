@@ -8,6 +8,10 @@
  *
  *  menu mode (HMENU=1):  keys through the options menu, see menu_test().
  *
+ *  mods mode (HMODS=1):  keys through the main menu's Mods screen, see mods_test().
+ *  weapons mode (HWEAPONS=<map>):  the port's Weapon menu (weapons.c) on that map, see weapons_test().
+ *  HARGS="-game mymod ...": Quake's command line for any mode (the Playdate's launch arguments).
+ *
  *  frames mode (HFRAMES=<prefix>):  writes the LCD of a demo playing in real time as PBM pictures,
  *      see frames_mode(). Used to make docs/demo.gif.
  *
@@ -25,6 +29,7 @@
 #include "pd_api.h"
 #include <string.h>
 #include <stdlib.h>
+#include <unistd.h>
 #include <stdint.h>
 #include <quakedef.h>
 #include <quakembd.h>
@@ -146,7 +151,7 @@ uint64_t qembd_get_us_time(void) { return fake_us; }
 void qembd_udelay(uint32_t us) { fake_us += us; }
 void *qembd_allocmain(size_t size)
 {
-	static byte pool[8 * 1024 * 1024] __attribute__((aligned(16)));
+	static byte pool[16 * 1024 * 1024] __attribute__((aligned(16)));	/* -mem up to 16 (HARGS) */
 	return size <= sizeof(pool) ? pool : NULL;
 }
 void qembd_log(const char *t) { if (getenv("HLOG")) fputs(t, stdout); }
@@ -155,6 +160,9 @@ void qembd_quit(void) { exit(0); }
 int qembd_dequeue_key_event(key_event_t *e) { (void)e; return -1; }
 int qembd_get_mouse_movement(mouse_movement_t *m) { (void)m; return -1; }
 void qembd_set_relative_mode(bool e) { (void)e; }
+static char restart_dir[256];
+static int restarts;
+void qembd_restart(const char *g) { snprintf(restart_dir, sizeof(restart_dir), "%s", g); restarts++; }
 
 cvar_t bgmvolume = {"bgmvolume", "1", true};
 cvar_t volume = {"volume", "0.7", true};
@@ -453,14 +461,22 @@ static int shots_mode(const char *dir)
 	return 0;
 }
 
-/* HMAPS=1: every map of the pak, turning and walking for a while in each (crash and limit checks) */
+/* HMAPS=1: every map of the pak, turning and walking for a while in each (crash and limit checks);
+ * HMAPS="hip1m1 hip1m2 ...": those maps instead (a mission pack or mod, with HARGS="-game ...") */
 static int maps_mode(void)
 {
-	static const char *const maps[] = {"start", "e1m1", "e1m2", "e1m3", "e1m4", "e1m5", "e1m6", "e1m7", "e1m8"};
-	int i;
+	static const char *maps[64] = {"start", "e1m1", "e1m2", "e1m3", "e1m4", "e1m5", "e1m6", "e1m7", "e1m8"};
+	static char list[1024];
+	int i, num_maps = 9;
 	char c[64];
 
-	for (i = 0; i < (int)(sizeof(maps) / sizeof(maps[0])); i++) {
+	if (strcmp(getenv("HMAPS"), "1")) {
+		snprintf(list, sizeof(list), "%s", getenv("HMAPS"));
+		num_maps = 0;
+		for (char *t = strtok(list, " "); t && num_maps < 64; t = strtok(NULL, " "))
+			maps[num_maps++] = t;
+	}
+	for (i = 0; i < num_maps; i++) {
 		snprintf(c, sizeof(c), "map %s\n", maps[i]);
 		cmd(c);
 		run(40);
@@ -868,18 +884,153 @@ static int input_test(void)
 	return menu_fail ? 1 : 0;
 }
 
+/*
+ * HMODS=1: the Mods screen lists the game folders next to id1 (a fake mission pack and mod are
+ * made in the run directory, with a folder that is not a game) and restarts into the one picked.
+ */
+extern int m_state, m_main_cursor;
+#define M_STATE_MAIN 1
+#define M_STATE_MODS 19
+
+static void make_file(const char *path)
+{
+	FILE *f = fopen(path, "w");
+
+	if (f)
+		fclose(f);
+}
+
+static int mods_test(void)
+{
+	int i;
+
+	/* the fake folders are made and deleted here: never touch real ones */
+	if (Sys_FileTime("hipnotic") != -1 || Sys_FileTime("zmod") != -1 || Sys_FileTime("notamod") != -1) {
+		printf("FAIL: hipnotic/, zmod/ or notamod/ already exists in the run directory\n");
+		return 1;
+	}
+	Sys_mkdir("hipnotic");
+	make_file("hipnotic/pak0.pak");
+	Sys_mkdir("zmod");
+	Sys_mkdir("zmod/maps");
+	Sys_mkdir("notamod");
+	make_file("notamod/readme.txt");
+
+	MCHECK(!strcmp(COM_GameDirName(), "id1"), "running id1");
+	MCHECK(!hipnotic && !rogue && standard_quake, "no mission pack");
+	MCHECK(!strcmp(COM_GameTitle("hipnotic"), "Scourge of Armagon") && !strcmp(COM_GameTitle("zmod"), "zmod"),
+		   "titles");
+
+	cmd("menu_main\n");
+	run(3);
+	dump_lcd("main");
+	for (i = 0; i < 5; i++)
+		press(K_DOWNARROW);
+	MCHECK(m_main_cursor == 5, "5 x down reaches Mods");
+	press(K_ENTER);
+	MCHECK(m_state == M_STATE_MODS, "Mods opens");
+	dump_lcd("mods");
+
+	press(K_ENTER);
+	MCHECK(m_state == M_STATE_MAIN && !restarts, "the running game (Quake, first) goes back to the main menu");
+	press(K_ENTER);
+	press(K_DOWNARROW);
+	press(K_ENTER);
+	MCHECK(m_state == M_STATE_MODS && !restarts, "another one asks first");
+	dump_lcd("mods-confirm");
+	press(K_ESCAPE);
+	MCHECK(m_state == M_STATE_MODS && !restarts, "B: back to the list");
+	press(K_ENTER);
+	press(K_ENTER);
+	MCHECK(restarts == 1 && !strcmp(restart_dir, "hipnotic"), "second row: hipnotic (Scourge of Armagon sorts before zmod)");
+	press(K_DOWNARROW);
+	press(K_ENTER);
+	press(K_ENTER);
+	MCHECK(restarts == 2 && !strcmp(restart_dir, "zmod"), "third row: zmod");
+	press(K_DOWNARROW);
+	press(K_ENTER);
+	MCHECK(restarts == 2 && m_state == M_STATE_MAIN, "notamod is not listed: down wraps to Quake");
+	press(K_ENTER);
+	press(K_UPARROW);
+	press(K_ENTER);
+	press(K_ENTER);
+	MCHECK(restarts == 3 && !strcmp(restart_dir, "zmod"), "up wraps to the last row");
+	press(K_ESCAPE);
+	MCHECK(m_state == M_STATE_MAIN, "B leaves Mods for the main menu");
+
+	remove("hipnotic/pak0.pak");
+	rmdir("hipnotic");
+	rmdir("zmod/maps");
+	rmdir("zmod");
+	remove("notamod/readme.txt");
+	rmdir("notamod");
+
+	printf("%s\n", menu_fail ? "MODS TEST FAILED" : "mods test passed");
+	return menu_fail ? 1 : 0;
+}
+
+/*
+ * HWEAPONS=<map>: on that map (with HARGS="-game hipnotic" etc. for a mission pack) give every
+ * weapon (impulse 9) and pick each one the Weapon system menu lists through port/boards/playdate/
+ * weapons.c, first to last and back, checking the weapon in hand each time: the impulses must be
+ * the ones the game's QuakeC understands.
+ */
+#include "weapons.h"
+
+static int weapons_test(const char *map)
+{
+	char c[64];
+	int n, cur, i, pass;
+
+	snprintf(c, sizeof(c), "map %s\n", map);
+	cmd(c);
+	run(30);
+	cmd("impulse 9\n");
+	run(5);
+	n = pdq_weapons_scan(&cur);
+	printf("%d weapons:", n);
+	for (i = 0; i < n; i++)
+		printf(" %s", pdq_weapon_names[i]);
+	printf("\n");
+	MCHECK(n >= 8, "impulse 9 gives at least the eight weapons");
+	for (pass = 0; pass < 2; pass++)
+		for (int k = 0; k < n; k++) {
+			const char *want;
+
+			i = pass ? n - 1 - k : k;
+			pdq_weapons_scan(&cur);
+			want = pdq_weapon_names[i];
+			pdq_weapon_select(i);
+			run(6);
+			pdq_weapons_scan(&cur);
+			snprintf(c, sizeof(c), "%s: %s in hand", pass ? "back" : "forth", want);
+			MCHECK(!strcmp(pdq_weapon_names[cur], want), c);
+		}
+	printf("%s\n", menu_fail ? "WEAPONS TEST FAILED" : "weapons test passed");
+	return menu_fail ? 1 : 0;
+}
+
 int main(int argc, char **argv)
 {
 	static char a0[] = "quake";
-	static char *av[] = {a0, NULL};
+	static char *av[32] = {a0, NULL};
+	static char args[512];
+	int ac = 1;
 	int frames = argc > 1 ? atoi(argv[1]) : 150;
+
+	if (getenv("HARGS")) {
+		snprintf(args, sizeof(args), "%s", getenv("HARGS"));
+		for (char *t = strtok(args, " "); t && ac < 31; t = strtok(NULL, " "))
+			av[ac++] = t;
+		av[ac] = NULL;
+	}
 
 	gfx.getFrame = get_frame;
 	gfx.markUpdatedRows = mark_rows;
 	api.graphics = &gfx;
 	qembd_pd = &api;
 	cur_frame = frame_new;
-	if (qembd_init(1, av) != 0)
+	if (qembd_init(ac, av) != 0)
 		return 1;
 
 	/* The port's picture options default to low texture detail, interlaced and a draw distance;
@@ -903,6 +1054,10 @@ int main(int argc, char **argv)
 		return maps_mode();
 	if (getenv("HMENU"))
 		return menu_test();
+	if (getenv("HMODS"))
+		return mods_test();
+	if (getenv("HWEAPONS"))
+		return weapons_test(getenv("HWEAPONS"));
 	if (getenv("HINPUT"))
 		return input_test();
 

@@ -108,7 +108,10 @@ When `QEMBD_PLAYDATE` is defined `Sys_Error`/`Sys_Quit` cannot call `exit`, so t
 void qembd_log(const char *text);                       // Sys_Printf output
 void qembd_fatal(const char *msg) __attribute__((noreturn));  // Sys_Error
 void qembd_quit(void) __attribute__((noreturn));              // Sys_Quit
+void qembd_restart(const char *gamedir);                      // the Mods menu: start again in gamedir
 ```
+
+`qembd_restart` returns; the board restarts the game once the frame is over (the Playdate: `restartGame`, see [Mods and mission packs](mods.md)).
 
 ### Minimal board skeleton
 
@@ -258,7 +261,7 @@ functions; `CDAudio_Init` returns `0`. The Playdate game does not link it: its m
 
 The file half of `sys.h` (`Sys_FileOpenRead`, `Sys_FileOpenWrite`, `Sys_FileClose`,
 `Sys_FileSeek`, `Sys_FileRead`, `Sys_FileWrite`, `Sys_FileTime`, `Sys_mkdir`, `Sys_FileSync`,
-`Sys_File_gets`) on top of `open/read/write/lseek`. Handles are real file descriptors.
+`Sys_File_gets`, `Sys_ListDir`) on top of `open/read/write/lseek` (`opendir` for `Sys_ListDir`). Handles are real file descriptors.
 
 ```c
 int Sys_FileOpenRead(char *path, int *handle)

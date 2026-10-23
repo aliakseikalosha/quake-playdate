@@ -73,6 +73,7 @@ void PR_Profile_f (void);
 
 edict_t *ED_Alloc (void);
 void ED_Free (edict_t *ed);
+ddef_t *ED_FindField (char *name);
 
 char	*ED_NewString (char *string);
 // returns a copy of the string allocated from the server's string heap

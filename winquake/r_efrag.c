@@ -95,6 +95,10 @@ void R_SplitEntityOnNode (mnode_t *node)
 	mleaf_t		*leaf;
 	int			sides;
 	
+// port: going down only one side, and the second side of a split, are a loop (as
+// SV_FindTouchedLeafs): the recursion went as deep as the BSP tree on the Playdate's small stack
+	for (;;)
+	{
 	if (node->contents == CONTENTS_SOLID)
 	{
 		return;
@@ -146,12 +150,11 @@ void R_SplitEntityOnNode (mnode_t *node)
 			r_pefragtopnode = node;
 	}
 	
-// recurse down the contacted sides
-	if (sides & 1)
+// recurse down the contacted sides (the same order: children[0] first)
+	if (sides == 3)
 		R_SplitEntityOnNode (node->children[0]);
-		
-	if (sides & 2)
-		R_SplitEntityOnNode (node->children[1]);
+	node = node->children[sides == 1 ? 0 : 1];
+	}
 }
 
 

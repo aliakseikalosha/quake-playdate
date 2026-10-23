@@ -295,7 +295,14 @@ void Host_Map_f (void)
 		strcat (cls.spawnparms, " ");
 	}
 
+#ifdef QEMBD_PLAYDATE
+	// the client connects in the next frame: loading a level is one long frame, and the Playdate
+	// stops a game whose frame runs over 10 s (Scourge of Armagon's hip2m3: 4.8 s spawning the
+	// server, then 2 s of the client's loading)
+	Cbuf_InsertText ("wait\nconnect local\n");
+#else
 	Cmd_ExecuteString ("connect local", src_command);
+#endif
 }
 
 /*

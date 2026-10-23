@@ -6,8 +6,10 @@
 # full pak0.pak and the shareware pak0_demo.pak:
 #   RELEASE on   pak0_demo.pak, if there is one, becomes id1/pak0.pak in the .pdx (replacing any
 #                pak0.pak) and id1/music/ is left out of it (the shareware has no music, and the
-#                re-release's tracks are not redistributable); without a pak0_demo.pak the .pdx keeps
-#                whatever pak0.pak and music Source/id1/ has.
+#                re-release's tracks are not redistributable), and so is every other game folder
+#                (mods and mission packs in Source/: the shareware does not run mods, and the
+#                mission packs are not redistributable either); without a pak0_demo.pak the .pdx
+#                keeps whatever pak0.pak, music and game folders Source/ has.
 #   RELEASE off  pak0_demo.pak is dropped from the .pdx, so only pak0.pak ships.
 # Source/id1/ itself is never touched.
 if(NOT PDX)
@@ -30,6 +32,20 @@ if(RELEASE)
 	message(STATUS "release: pak0_demo.pak is id1/pak0.pak")
 	file(REMOVE_RECURSE "${id1}/music")
 	message(STATUS "release: id1/music left out of the .pdx")
+	# game folders as the Mods menu sees them (winquake/menu.c, M_ModsCheckEntry)
+	file(GLOB entries LIST_DIRECTORIES true "${PDX}/*")
+	foreach(dir ${entries})
+		get_filename_component(name "${dir}" NAME)
+		# (by path: in this script's policy a quoted "id1" would read the variable id1)
+		if(NOT IS_DIRECTORY "${dir}" OR "${dir}" STREQUAL "${id1}")
+			continue()
+		endif()
+		file(GLOB game_files "${dir}/*.pak" "${dir}/progs.dat" "${dir}/maps" "${dir}/progs" "${dir}/gfx" "${dir}/sound")
+		if(game_files)
+			file(REMOVE_RECURSE "${dir}")
+			message(STATUS "release: ${name}/ left out of the .pdx")
+		endif()
+	endforeach()
 else()
 	file(REMOVE "${demo}")
 	message(STATUS "pak0_demo.pak left out of the .pdx")

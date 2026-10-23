@@ -221,6 +221,7 @@ void COM_InitArgv (int argc, char **argv);
 
 char *COM_SkipPath (char *pathname);
 void COM_StripExtension (char *in, char *out);
+char *COM_FileExtension (char *in);
 void COM_FileBase (char *in, char *out, size_t outsize);
 void COM_DefaultExtension (char *path, char *extension);
 
@@ -249,3 +250,6 @@ void COM_LoadCacheFile (char *path, struct cache_user_s *cu);
 extern	struct cvar_s	registered;
 
 extern qboolean		standard_quake, rogue, hipnotic;
+
+char *COM_GameDirName (void);
+char *COM_GameTitle (char *dir);

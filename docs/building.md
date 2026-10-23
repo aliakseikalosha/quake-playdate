@@ -15,6 +15,9 @@ falls back to a built-in copy (`winquake/defaultcfg.h`) and the D-pad and button
 `campaign` cvar and `MOVETYPE_BOUNCEMISSILE` for gibs, and a large level could crash the renderer's model cache.
 All of that is handled; see [Game data](port/game-data.md).
 
+Mods and the mission packs go in folders next to `id1` (in `Source/` or the Data folder) and are picked in the main menu's **Mods**;
+see [Mods and mission packs](port/mods.md). A shareware release build leaves them out of the `.pdx`.
+
 Music is optional: the CD tracks as `Quake02.wav` ... `Quake11.wav` (the re-release's names) in `port/boards/playdate/Source/id1/music/`
 play as the levels' music, streamed from the `.pdx`. As PCM the ten tracks are about 590 MB; as IMA ADPCM they are about 150 MB (27-54 dB signal-to-noise against the PCM),
 see [`cd_pd.c`](port/playdate.md#cd_pdc) for the `ffmpeg` command.

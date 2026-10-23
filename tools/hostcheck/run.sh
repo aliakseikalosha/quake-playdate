@@ -2,6 +2,8 @@
 # tools/hostcheck/run.sh [frames]            build and run the lazy-upscale invariants on the scripted scenarios
 # HGOLD=file tools/hostcheck/run.sh          write per-frame LCD hashes instead (golden mode)
 # HMENU=1 tools/hostcheck/run.sh             press keys through the options menu and check what it does and saves
+# HMODS=1 tools/hostcheck/run.sh             press keys through the Mods screen (fake game folders in out/run)
+# HARGS="-game mymod" tools/hostcheck/run.sh any of the above with that command line
 # HINTERLACE=1 tools/hostcheck/run.sh        any of the above with interlaced rendering (r_interlace 1)
 set -e
 HERE=$(cd "$(dirname "$0")" && pwd)

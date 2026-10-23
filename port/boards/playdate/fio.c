@@ -154,6 +154,30 @@ void Sys_mkdir(char *path)
 	qembd_pd->file->mkdir(pdq_path(path, (char[256]){0}, 256));
 }
 
+struct list_ctx {
+	void (*func)(char *name, void *data);
+	void *data;
+};
+
+static void list_entry(const char *name, void *ud)
+{
+	struct list_ctx *ctx = ud;
+	char buf[256];
+
+	strncpy(buf, name, sizeof(buf) - 1);
+	buf[sizeof(buf) - 1] = '\0';
+	ctx->func(buf, ctx->data);
+}
+
+/* listfiles() shows the .pdx and the Data folder as one: an entry in both is listed once */
+int Sys_ListDir(char *path, void (*func)(char *name, void *data), void *data)
+{
+	char norm[256];
+	struct list_ctx ctx = {func, data};
+
+	return qembd_pd->file->listfiles(pdq_path(path, norm, sizeof(norm)), list_entry, &ctx, 0);
+}
+
 void Sys_FileSync(int handle)
 {
 	SDFile *f = get(handle);

@@ -146,7 +146,8 @@ The status bar (health, armour, ammo, weapon icons, the face) and the overlays t
 Sbar_DrawNum (136, 0, cl.stats[STAT_HEALTH], 3, cl.stats[STAT_HEALTH] <= 25);   // health, red when ≤ 25
 ```
 
-Unchanged except an unsigned shift in the rune loop and an unused variable removed.
+Unchanged except an unsigned shift in the rune loop and an unused variable removed. The mission packs' parts (`if (hipnotic)`, `if (rogue)`) are the
+original 1997 code; the [Mods menu](../port/mods.md) switches them on by starting `-game hipnotic` / `-game rogue`.
 
 ---
 
@@ -180,7 +181,8 @@ All of Quake's menus. A menu is a `m_state` plus three functions: `M_X_Draw`, `M
 
 | Menu | Entry point | Notes |
 | --- | --- | --- |
-| Main | `M_Menu_Main_f` | Single Player, Multiplayer, Options, Help, Quit. |
+| Main | `M_Menu_Main_f` | Single Player, Multiplayer, Options, Help, Quit (`gfx/mainmenu.lmp`), then **Mods** drawn as text under it (`MAIN_MODS`). |
+| **Mods** | `M_Menu_Mods_f` (`menu_mods`) | Port addition: the game folders next to `id1`; picking one calls `qembd_restart` ([Mods and mission packs](../port/mods.md)). |
 | Single player | `M_Menu_SinglePlayer_f`, `M_Menu_Load_f`, `M_Menu_Save_f` | New game, load, save. |
 | **Options** | `M_Menu_Options_f`, **`M_Menu_Options_Shortcut`** | Rewritten for the Playdate (below). |
 | Help | `M_Menu_Help_f` | The help screens. |

@@ -334,6 +334,10 @@ void SV_FindTouchedLeafs (edict_t *ent, mnode_t *node)
 	int			sides;
 	int			leafnum;
 
+// port: going down only one side, and the second side of a split, are a loop: the recursion went
+// as deep as the BSP tree (141 levels in Scourge of Armagon) on the Playdate's ~10 KB stack
+	for (;;)
+	{
 	if (node->contents == CONTENTS_SOLID)
 		return;
 	
@@ -357,12 +361,11 @@ void SV_FindTouchedLeafs (edict_t *ent, mnode_t *node)
 	splitplane = node->plane;
 	sides = BOX_ON_PLANE_SIDE(ent->v.absmin, ent->v.absmax, splitplane);
 	
-// recurse down the contacted sides
-	if (sides & 1)
+// recurse down the contacted sides (the same order: children[0] first)
+	if (sides == 3)
 		SV_FindTouchedLeafs (ent, node->children[0]);
-		
-	if (sides & 2)
-		SV_FindTouchedLeafs (ent, node->children[1]);
+	node = node->children[sides == 1 ? 0 : 1];
+	}
 }
 
 /*
@@ -583,9 +586,17 @@ qboolean SV_RecursiveHullCheck (hull_t *hull, int num, float p1f, float p2f, vec
 	float		frac;
 	int			i;
 	vec3_t		mid;
+	vec3_t		start;		// p1 when going on past a node (the near side's mid)
 	int			side;
 	float		midf;
 
+// port: the calls that only went on down one side (the segment on one side of the plane, or past
+// the node once the near side was clear) are a loop, so only the near side of a crossing nests.
+// Mission pack maps have clip hulls over 100 nodes deep, and a recursion that deep (80 bytes a
+// call) overflowed the Playdate's ~10 KB stack (Scourge of Armagon's hip2m3: a monster's first
+// walkmove). The arithmetic is the original's, so traces come out the same.
+	for (;;)
+	{
 // check for empty
 	if (num < 0)
 	{
@@ -624,9 +635,15 @@ qboolean SV_RecursiveHullCheck (hull_t *hull, int num, float p1f, float p2f, vec
 	
 #if 1
 	if (t1 >= 0 && t2 >= 0)
-		return SV_RecursiveHullCheck (hull, node->children[0], p1f, p2f, p1, p2, trace);
+	{
+		num = node->children[0];
+		continue;
+	}
 	if (t1 < 0 && t2 < 0)
-		return SV_RecursiveHullCheck (hull, node->children[1], p1f, p2f, p1, p2, trace);
+	{
+		num = node->children[1];
+		continue;
+	}
 #else
 	if ( (t1 >= DIST_EPSILON && t2 >= DIST_EPSILON) || (t2 > t1 && t1 >= 0) )
 		return SV_RecursiveHullCheck (hull, node->children[0], p1f, p2f, p1, p2, trace);
@@ -665,8 +682,14 @@ qboolean SV_RecursiveHullCheck (hull_t *hull, int num, float p1f, float p2f, vec
 	
 	if (SV_HullPointContents (hull, node->children[side^1], mid)
 	!= CONTENTS_SOLID)
+	{
 // go past the node
-		return SV_RecursiveHullCheck (hull, node->children[side^1], midf, p2f, mid, p2, trace);
+		num = node->children[side^1];
+		p1f = midf;
+		VectorCopy (mid, start);
+		p1 = start;
+		continue;
+	}
 	
 	if (trace->allsolid)
 		return false;		// never got out of the solid area
@@ -705,6 +728,7 @@ qboolean SV_RecursiveHullCheck (hull_t *hull, int num, float p1f, float p2f, vec
 	VectorCopy (mid, trace->endpos);
 
 	return false;
+	}
 }
 
 

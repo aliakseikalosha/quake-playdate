@@ -83,5 +83,8 @@ int qembd_get_mouse_movement(mouse_movement_t *movement);
 void qembd_log(const char *text);
 void qembd_fatal(const char *msg) __attribute__((noreturn));
 void qembd_quit(void) __attribute__((noreturn));
+/* Start the game again in game directory gamedir ("" = id1 only), and keep starting it there
+ * (the Mods menu). Returns; the restart happens once the current frame is over. */
+void qembd_restart(const char *gamedir);
 
 #endif /* __QUAKEMBD_H */

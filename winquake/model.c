@@ -35,7 +35,10 @@ model_t *Mod_LoadModel (model_t *mod, qboolean crash);
 
 byte	mod_novis[MAX_MAP_LEAFS/8];
 
-#define	MAX_MOD_KNOWN	256
+// names are never freed in a session: every map, model and brush submodel ("*N") ever loaded.
+// 256 overflowed in the mission packs (Scourge of Armagon: up to 187 submodels in one map and 107
+// models, ~312 in all); each entry is 388 bytes of static memory on the Playdate
+#define	MAX_MOD_KNOWN	384
 model_t	mod_known[MAX_MOD_KNOWN];
 int		mod_numknown;
 

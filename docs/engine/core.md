@@ -208,7 +208,9 @@ give 7 100          100 rockets
 A save file is plain text written with `fprintf` and read with `fscanf`. On the Playdate those go through
 [`pd_stdio.c`](../port/playdate.md#pd_stdioc). **This port's changes:** dedicated-server branches removed;
 `Host_Loadgame_f` and `LoadGamestate` use a `static char str[32768]` instead of a stack buffer (the stack is
-only ~10 KB on the device); floats are cast to `double` for `fprintf`.
+only ~10 KB on the device); floats are cast to `double` for `fprintf`. On the Playdate `map` connects the client in the next
+frame (`wait` before `connect local`): loading a level is one long frame and the system stops a game whose frame runs over 10 s
+([Mods and mission packs](../port/mods.md#loading-a-level-in-under-10-s)).
 
 ---
 
@@ -226,6 +228,8 @@ int  Sys_FileRead (int handle, void *dest, int count);
 int  Sys_FileWrite (int handle, void *data, int count);
 int  Sys_FileTime (char *path);                  // -1 if missing
 void Sys_mkdir (char *path);
+int  Sys_ListDir (char *path, void (*func)(char *name, void *data), void *data);  // port addition:
+                                                 // each entry, folders end in '/' (the Mods menu)
 
 void   Sys_Error (char *error, ...);             // never returns
 void   Sys_Quit (void);
@@ -295,7 +299,8 @@ rotating static buffer; `COM_Parse(data)` is Quake's tokenizer (quoted strings, 
 | Function | Purpose |
 | --- | --- |
 | `COM_InitArgv`, `COM_CheckParm("-mem")` | Command-line arguments (`com_argc`, `com_argv`). |
-| `COM_Init`, `COM_InitFilesystem` | Registers the `registered` cvar, finds the game dir (`id1`), adds `-game` dirs, loads `pak0.pak`, `pak1.pak`, … |
+| `COM_Init`, `COM_InitFilesystem` | Registers the `registered` cvar, finds the game dir (`id1`), adds `-game` dirs, loads `pak0.pak`, `pak1.pak`, … **Port change:** `-game hipnotic` / `-game rogue` also set `hipnotic` / `rogue` as `-hipnotic` / `-rogue` do ([Mods and mission packs](../port/mods.md)). |
+| `COM_GameDirName()`, `COM_GameTitle(dir)` | Port additions: the running game folder's name (`"id1"`, `"hipnotic"`, …); what to call a folder (*Scourge of Armagon*, …, else its name). |
 | `COM_AddGameDirectory(dir)` | Add a directory and its numbered pak files to the search path. |
 | `COM_FindFile` / `COM_OpenFile` / `COM_FOpenFile` | Look a file up in packs and directories. Return the file size (`com_filesize`), `-1` if missing. |
 | `COM_LoadFile(path, usehunk)` | Loads to the hunk, the temp area, the zone or the cache. Wrappers: `COM_LoadHunkFile`, `COM_LoadTempFile`, `COM_LoadStackFile`, `COM_LoadCacheFile`. |
@@ -397,7 +402,7 @@ directly; `Cvar_SetValue` casts to `double` for `sprintf`.
 
 The command buffer and the command interpreter.
 
-- **Buffer.** `Cbuf_AddText("text\n")` appends, `Cbuf_InsertText` prepends, `Cbuf_Execute()` runs every complete line
+- **Buffer.** `Cbuf_AddText("text\n")` appends, `Cbuf_InsertText` prepends, `Cbuf_Execute()` runs every complete line (its 1 KB line buffer is static in this port: a level loads inside the `map` command, on the Playdate's ~10 KB stack)
   through `Cmd_ExecuteString`. `wait` (`Cmd_Wait_f`) delays the remaining commands one frame.
 - **Dispatch.** `Cmd_ExecuteString(text, src)` tokenises the line (`Cmd_TokenizeString`), then tries, in order: a registered
   command, an alias, a cvar (`Cvar_Command`); otherwise it prints `Unknown command`. `Cmd_Argc()`, `Cmd_Argv(i)`,

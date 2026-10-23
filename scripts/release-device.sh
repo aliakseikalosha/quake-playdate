@@ -9,7 +9,8 @@
 #      everything is rebuilt and the post-build step that hands out the build number always runs;
 #   2. configures a Release device build (no profiler, no benchmark) and builds it;
 #   3. ships Source/id1/pak0_demo.pak, if there is one, as id1/pak0.pak in the .pdx, without id1/music
-#      (-DPD_RELEASE=ON; every other build leaves pak0_demo.pak out), and checks that it did;
+#      and without any other game folder (mods, mission packs) in Source/ (-DPD_RELEASE=ON; every
+#      other build leaves pak0_demo.pak out), and checks that it did;
 #   4. checks that the build number in the built .pdx's pdxinfo went up (port/boards/playdate/
 #      pdx_buildnumber.cmake sets it to one more than the larger of .build_number and the number in
 #      Source/pdxinfo), and writes that number into Source/pdxinfo, so the number of the release is
@@ -55,6 +56,11 @@ if [ -f "$DEMO_PAK" ]; then
   [ ! -e "$PDX/id1/pak0_demo.pak" ] && cmp -s "$DEMO_PAK" "$PDX/id1/pak0.pak" \
     || { echo "$PDX/id1/pak0.pak is not $DEMO_PAK (or pak0_demo.pak is still in the .pdx)"; exit 1; }
   [ ! -e "$PDX/id1/music" ] || { echo "$PDX/id1/music is still in the shareware release"; exit 1; }
+  for d in "$PDX"/*/; do
+    [ "$(basename "$d")" = id1 ] && continue
+    ls "$d" 2>/dev/null | grep -qiE '\.pak$|^progs\.dat$|^(maps|progs|gfx|sound)$' \
+      && { echo "$d (a mod or mission pack) is still in the shareware release"; exit 1; }
+  done
   pak="id1/pak0.pak is pak0_demo.pak"
 else
   pak="no $DEMO_PAK, id1/pak0.pak as it is in Source/id1"

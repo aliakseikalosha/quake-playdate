@@ -118,8 +118,10 @@ add_compile_definitions(
 	PD_RENDER_HEIGHT=${PD_RENDER_HEIGHT}
 	PD_REFRESH_RATE=${PD_REFRESH_RATE}
 	$<$<BOOL:${PD_LOWRES_3D}>:PD_LOWRES_3D=1>
-	# Quake heap: try DEFAULT, back off in 512 KiB steps down to MIN.
-	DEFAULT_MEM_SIZE=\(7*1024*1024\)
+	# Quake heap: try DEFAULT, back off in 512 KiB steps down to MIN. 10 MB: the mission packs
+	# need about 7.1 MB of it at their peak on the device (Scourge of Armagon's hip2m3) plus room for
+	# the model cache, and the system still has ~2.9 MB for sounds, music and files (docs/port/mods.md).
+	DEFAULT_MEM_SIZE=\(10*1024*1024\)
 	DEFAULT_MIN_MEM_SIZE=\(4*1024*1024\)
 )
 

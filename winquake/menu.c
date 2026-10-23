@@ -17,6 +17,7 @@ along with this program; if not, write to the Free Software
 Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 
 */
+#include <ctype.h>
 #include "quakedef.h"
 
 #ifdef _WIN32
@@ -24,11 +25,12 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 #endif
 
 void qembd_set_relative_mode(bool enabled);
+void qembd_restart(const char *gamedir);
 
 void (*vid_menudrawfn)(void);
 void (*vid_menukeyfn)(int key);
 
-enum {m_none, m_main, m_singleplayer, m_load, m_save, m_multiplayer, m_setup, m_net, m_options, m_video, m_keys, m_help, m_quit, m_serialconfig, m_modemconfig, m_lanconfig, m_gameoptions, m_search, m_slist} m_state;
+enum {m_none, m_main, m_singleplayer, m_load, m_save, m_multiplayer, m_setup, m_net, m_options, m_video, m_keys, m_help, m_quit, m_serialconfig, m_modemconfig, m_lanconfig, m_gameoptions, m_search, m_slist, m_mods} m_state;
 
 void M_Menu_Main_f (void);
 	void M_Menu_SinglePlayer_f (void);
@@ -42,6 +44,7 @@ void M_Menu_Main_f (void);
 		void M_Menu_Video_f (void);
 	void M_Menu_Help_f (void);
 	void M_Menu_Quit_f (void);
+	void M_Menu_Mods_f (void);
 void M_Menu_SerialConfig_f (void);
 	void M_Menu_ModemConfig_f (void);
 void M_Menu_LanConfig_f (void);
@@ -61,6 +64,7 @@ void M_Main_Draw (void);
 		void M_Video_Draw (void);
 	void M_Help_Draw (void);
 	void M_Quit_Draw (void);
+	void M_Mods_Draw (void);
 void M_SerialConfig_Draw (void);
 	void M_ModemConfig_Draw (void);
 void M_LanConfig_Draw (void);
@@ -80,6 +84,7 @@ void M_Main_Key (int key);
 		void M_Video_Key (int key);
 	void M_Help_Key (int key);
 	void M_Quit_Key (int key);
+	void M_Mods_Key (int key);
 void M_SerialConfig_Key (int key);
 	void M_ModemConfig_Key (int key);
 void M_LanConfig_Key (int key);
@@ -284,7 +289,8 @@ void M_ToggleMenu_f (void)
 /* MAIN MENU */
 
 int	m_main_cursor;
-#define	MAIN_ITEMS	5
+#define	MAIN_ITEMS	6		// the five of gfx/mainmenu.lmp, then Mods (drawn as text)
+#define	MAIN_MODS	5
 
 
 void M_Menu_Main_f (void)
@@ -312,6 +318,8 @@ static void M_Menu_Close (void)
 }
 
 
+static void M_MainModsDraw (int y);
+
 void M_Main_Draw (void)
 {
 	qpic_t	*p;
@@ -320,6 +328,7 @@ void M_Main_Draw (void)
 	p = Draw_CachePic ("gfx/ttl_main.lmp");
 	M_DrawPic ( (320-p->width)/2, 4, p);
 	M_DrawTransPic (72, 32, Draw_CachePic ("gfx/mainmenu.lmp") );
+	M_MainModsDraw (32 + MAIN_MODS * 20);
 
 	M_DrawTransPic (54, 32 + m_main_cursor * 20,Draw_CachePic( va("gfx/menudot%i.lmp", _M_HostTime10Mod6()+1 ) ) );
 }
@@ -368,6 +377,10 @@ void M_Main_Key (int key)
 
 		case 4:
 			M_Menu_Quit_f ();
+			break;
+
+		case MAIN_MODS:
+			M_Menu_Mods_f ();
 			break;
 		}
 	}
@@ -1990,6 +2003,251 @@ void M_Quit_Draw (void)
 }
 
 //=============================================================================
+/* MODS MENU */
+
+// The game folders next to id1 (mods, the mission packs, the re-release's add-ons) and Quake
+// itself. Picking one starts the game again in it (qembd_restart: the game directory can only be
+// chosen at start-up, see COM_InitFilesystem), and the port keeps starting it there until another
+// is picked. Shown at the options menu's double size.
+
+#define	MAX_MODS		32
+#define	MODS_TOP		(OPT_TOP + OPT_CW)	// first row: below the title and the running game
+
+typedef struct
+{
+	char	dir[MAX_QPATH];		// folder name; "" = id1 only
+} mod_t;
+
+static mod_t	mods[MAX_MODS];
+static int		num_mods;
+static int		mods_cursor, mods_top;
+static qboolean	mods_confirm;		// asking whether to restart into mods[mods_cursor]
+
+static char		mods_found[MAX_MODS][MAX_QPATH];
+static int		num_found;
+static qboolean	mods_is_game;
+
+// the base directory's subdirectories
+static void M_ModsFoundDir (char *name, void *data)
+{
+	int		len = strlen (name);
+
+	if (len < 2 || name[len-1] != '/' || num_found >= MAX_MODS || len > MAX_QPATH)
+		return;
+	name[len-1] = 0;
+	if (!Q_strcasecmp (name, GAMENAME))
+		return;
+	strcpy (mods_found[num_found++], name);
+}
+
+// a game folder holds pak files, a progs.dat or folders of game data
+static void M_ModsCheckEntry (char *name, void *data)
+{
+	static char	*const game_entries[] = {"progs.dat", "maps/", "progs/", "gfx/", "sound/"};
+	int		i;
+
+	if (!Q_strcasecmp (COM_FileExtension (name), "pak"))
+		mods_is_game = true;
+	for (i=0 ; i<(int)(sizeof(game_entries)/sizeof(game_entries[0])) ; i++)
+		if (!Q_strcasecmp (name, game_entries[i]))
+			mods_is_game = true;
+}
+
+static char *M_ModTitle (int i)
+{
+	return COM_GameTitle (mods[i].dir[0] ? mods[i].dir : GAMENAME);
+}
+
+// alphabetical order, ignoring case (Q_strcasecmp only tells equal from not equal)
+static int M_ModsCompare (char *a, char *b)
+{
+	for ( ; *a && tolower (*a) == tolower (*b) ; a++, b++)
+		;
+	return tolower (*a) - tolower (*b);
+}
+
+static void M_ScanMods (void)
+{
+	int		i, j;
+	mod_t	m;
+
+	num_found = 0;
+	Sys_ListDir (".", M_ModsFoundDir, NULL);
+
+	num_mods = 0;
+	mods[num_mods++].dir[0] = 0;
+	for (i=0 ; i<num_found ; i++)
+	{
+		mods_is_game = !Q_strcasecmp (mods_found[i], COM_GameDirName ());	// whatever it holds
+		Sys_ListDir (va ("./%s", mods_found[i]), M_ModsCheckEntry, NULL);
+		if (!mods_is_game)
+			continue;
+		strcpy (mods[num_mods++].dir, mods_found[i]);
+	}
+
+	// Quake first, the rest by title
+	for (i=2 ; i<num_mods ; i++)
+		for (j=i ; j>1 && M_ModsCompare (M_ModTitle (j-1), M_ModTitle (j)) > 0 ; j--)
+		{
+			m = mods[j];
+			mods[j] = mods[j-1];
+			mods[j-1] = m;
+		}
+}
+
+// the entry of the game that is running
+static qboolean M_ModIsRunning (int i)
+{
+	if (!mods[i].dir[0])
+		return !Q_strcasecmp (COM_GameDirName (), GAMENAME);
+	return !Q_strcasecmp (COM_GameDirName (), mods[i].dir);
+}
+
+void M_Menu_Mods_f (void)
+{
+	int		i;
+
+	key_dest = key_menu;
+	m_state = m_mods;
+	m_entersound = true;
+	mods_confirm = false;
+
+	M_ScanMods ();
+	mods_cursor = mods_top = 0;
+	for (i=0 ; i<num_mods ; i++)
+		if (M_ModIsRunning (i))
+			mods_cursor = i;
+}
+
+// a title cut to what fits from x to the right edge
+static void M_ModsPrint (int x, int y, char *str)
+{
+	char	buf[64];
+	int		fit = ((int)vid.width - x) / OPT_CW;
+
+	if (fit < 1)
+		return;
+	if (fit > (int)sizeof(buf) - 1)
+		fit = sizeof(buf) - 1;
+	Q_strncpy (buf, str, fit);
+	buf[fit] = 0;
+	M_OptPrint (x, y, buf);
+}
+
+// white (the options rows are gold)
+static void M_ModsPrintWhite (int x, int y, char *str)
+{
+	for ( ; *str ; str++, x += OPT_CW)
+		Draw_CharacterScaled (x, y, *str, OPT_SCALE);
+}
+
+void M_Mods_Draw (void)
+{
+	int		i, y, rows;
+
+	M_ModsPrintWhite (((int)vid.width - 4*OPT_CW) / 2, 8, "Mods");
+
+	if (mods_confirm)
+	{
+		y = OPT_TOP;
+		M_ModsPrint (OPT_CURSOR_X, y, "Restart the game in");
+		M_ModsPrintWhite (OPT_CURSOR_X, y += OPT_CW, M_ModTitle (mods_cursor));
+		M_ModsPrint (OPT_CURSOR_X, y += OPT_CW, "Progress not saved");
+		M_ModsPrint (OPT_CURSOR_X, y += OPT_CW, "is lost.");
+		M_ModsPrint (OPT_CURSOR_X, y += 2*OPT_CW, "A: restart  B: back");
+		return;
+	}
+
+	if (num_mods < 2)
+	{
+		y = OPT_TOP;
+		M_ModsPrint (OPT_CURSOR_X, y, "No mods found. Copy");
+		M_ModsPrint (OPT_CURSOR_X, y += OPT_CW, "a mod's folder next");
+		M_ModsPrint (OPT_CURSOR_X, y += OPT_CW, "to id1 in the game's");
+		M_ModsPrint (OPT_CURSOR_X, y += OPT_CW, "Data folder.");
+		return;
+	}
+
+	// scroll so the cursor row is on screen
+	rows = ((int)vid.height - MODS_TOP) / OPT_CW;
+	if (rows < 1)
+		rows = 1;
+	if (mods_cursor < mods_top)
+		mods_top = mods_cursor;
+	if (mods_cursor >= mods_top + rows)
+		mods_top = mods_cursor - rows + 1;
+
+	M_ModsPrint (OPT_CURSOR_X, OPT_TOP - OPT_CW/2, va ("Running: %s", COM_GameTitle (COM_GameDirName ())));
+	for (i=mods_top ; i<num_mods && i<mods_top + rows ; i++)
+	{
+		y = MODS_TOP + (i - mods_top)*OPT_CW;
+		if (M_ModIsRunning (i))
+			M_ModsPrintWhite (OPT_LABEL_X, y, M_ModTitle (i));
+		else
+			M_ModsPrint (OPT_LABEL_X, y, M_ModTitle (i));
+		if (i == mods_cursor)
+			Draw_CharacterScaled (OPT_CURSOR_X, y, 12 + _M_RealTime4Mod1(), OPT_SCALE);
+	}
+}
+
+void M_Mods_Key (int k)
+{
+	if (mods_confirm)
+	{
+		switch (k)
+		{
+		case K_ENTER:
+		case 'y':
+			Host_SaveOptions ();
+			qembd_restart (mods[mods_cursor].dir);
+			mods_confirm = false;
+			break;
+		case K_ESCAPE:
+		case 'n':
+			mods_confirm = false;
+			m_entersound = true;
+			break;
+		}
+		return;
+	}
+
+	switch (k)
+	{
+	case K_ESCAPE:
+		M_Menu_Main_f ();
+		break;
+
+	case K_UPARROW:
+		S_LocalSound ("misc/menu1.wav");
+		if (--mods_cursor < 0)
+			mods_cursor = num_mods - 1;
+		break;
+
+	case K_DOWNARROW:
+		S_LocalSound ("misc/menu1.wav");
+		if (++mods_cursor >= num_mods)
+			mods_cursor = 0;
+		break;
+
+	case K_ENTER:
+		if (num_mods < 2 || M_ModIsRunning (mods_cursor))
+		{
+			M_Menu_Main_f ();	// nothing to change
+			break;
+		}
+		m_entersound = true;
+		mods_confirm = true;
+		break;
+	}
+}
+
+// the main menu's Mods item, under gfx/mainmenu.lmp and as large as its words
+static void M_MainModsDraw (int y)
+{
+	M_OptPrint (72 + ((vid.width - 320)>>1) + 2, y + 2, "MODS");
+}
+
+//=============================================================================
 
 /* SERIAL CONFIG MENU */
 
@@ -3303,6 +3561,7 @@ void M_Init (void)
 	Cmd_AddCommand ("menu_video", M_Menu_Video_f);
 	Cmd_AddCommand ("help", M_Menu_Help_f);
 	Cmd_AddCommand ("menu_quit", M_Menu_Quit_f);
+	Cmd_AddCommand ("menu_mods", M_Menu_Mods_f);
 }
 
 
@@ -3408,6 +3667,10 @@ void M_Draw (void)
 	case m_slist:
 		M_ServerList_Draw ();
 		break;
+
+	case m_mods:
+		M_Mods_Draw ();
+		break;
 	}
 
 	if (m_entersound)
@@ -3499,6 +3762,10 @@ void M_Keydown (int key)
 
 	case m_slist:
 		M_ServerList_Key (key);
+		return;
+
+	case m_mods:
+		M_Mods_Key (key);
 		return;
 	}
 }

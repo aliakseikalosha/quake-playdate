@@ -1592,6 +1592,47 @@ void COM_AddGameDirectory (char *dir)
 
 /*
 ================
+COM_GameDirName
+
+The name of the game directory in use ("id1", "hipnotic", a mod's folder name)
+================
+*/
+char *COM_GameDirName (void)
+{
+	char	*slash = strrchr (com_gamedir, '/');
+
+	return slash ? slash + 1 : com_gamedir;
+}
+
+/*
+================
+COM_GameTitle
+
+What to call a game directory: the mission packs and the 2021 re-release's add-ons by their
+titles, anything else by its folder name
+================
+*/
+char *COM_GameTitle (char *dir)
+{
+	static const char	*const titles[][2] = {
+		{GAMENAME, "Quake"},
+		{"hipnotic", "Scourge of Armagon"},
+		{"rogue", "Dissolution of Eternity"},
+		{"dopa", "Dimension of the Past"},
+		{"mg1", "Dimension of the Machine"},
+		{"impel", "Abyss of Pandemonium"},
+		{"as", "Aftershock"},
+	};
+	int		i;
+
+	for (i=0 ; i<(int)(sizeof(titles)/sizeof(titles[0])) ; i++)
+		if (!Q_strcasecmp (dir, (char *)titles[i][0]))
+			return (char *)titles[i][1];
+	return dir;
+}
+
+/*
+================
 COM_InitFilesystem
 ================
 */
@@ -1660,6 +1701,19 @@ void COM_InitFilesystem (void)
 	{
 		com_modified = true;
 		COM_AddGameDirectory (va("%s/%s", basedir, com_argv[i+1]));
+
+	// the mission packs started as plain game folders (the port's Mods menu does that) get
+	// their status bar, menus and "give" items as if started with -hipnotic / -rogue
+		if (!Q_strcasecmp (com_argv[i+1], "hipnotic"))
+		{
+			hipnotic = true;
+			standard_quake = false;
+		}
+		else if (!Q_strcasecmp (com_argv[i+1], "rogue"))
+		{
+			rogue = true;
+			standard_quake = false;
+		}
 	}
 
 //

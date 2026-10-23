@@ -294,6 +294,7 @@ if (ent->model->flags & EF_ROCKET)
 
 **Always built.** *Entity fragments*: each entity is split into `efrag_t`s, one per BSP leaf it touches, so a leaf knows which entities to draw and so static entities can be culled by the PVS.
 `R_AddEfrags(ent)` (called when an entity moves or spawns; splits the entity's bounding box on the BSP with `R_SplitEntityOnNode`), `R_RemoveEfrags`, `R_StoreEfrags`, `R_SplitEntityOnNode2`.
+**Port change:** `R_SplitEntityOnNode` recurses only where the box straddles a plane, as `SV_FindTouchedLeafs` (the Playdate's stack, see [Mods and mission packs](../port/mods.md#the-stack-overflow)); used by both renderers.
 Uses the fixed pool `cl_efrags[MAX_EFRAGS]` (640). The Playdate renderer uses the same efrags for static entities (torches) visibility (`PDR_StoreStatics`).
 
 ---

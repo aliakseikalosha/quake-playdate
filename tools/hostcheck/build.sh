@@ -19,7 +19,7 @@ rm -rf "$O"; mkdir -p "$O"
 
 DEFS=(-DWINQUAKE_ENABLE_LOGGING -DWINQUAKE_LOGGING_EXTERNAL -DQEMBD_PLAYDATE=1 -DTARGET_SIMULATOR=1
       -DTARGET_EXTENSION=1 -DPD_LOWRES_3D=1 -DPD_RENDER_WIDTH=400 -DPD_RENDER_HEIGHT=240
-      -DPD_REFRESH_RATE=30 "-DDEFAULT_MEM_SIZE=(7*1024*1024)" "-DDEFAULT_MIN_MEM_SIZE=(4*1024*1024)")
+      -DPD_REFRESH_RATE=30 "-DDEFAULT_MEM_SIZE=(10*1024*1024)" "-DDEFAULT_MIN_MEM_SIZE=(4*1024*1024)")
 grep -q "PD_FAST_EDGES" "$TREE/winquake/r_edge.c" 2>/dev/null && DEFS+=(-DPD_FAST_EDGES=1)
 [ -z "$NO_FAST_ALIAS" ] && grep -q "PD_FAST_ALIAS" "$TREE/winquake/d_polyse.c" 2>/dev/null && DEFS+=(-DPD_FAST_ALIAS=1)
 [ -z "$NO_FAST_FACES" ] && grep -q "PD_FAST_FACES" "$TREE/winquake/r_draw.c" 2>/dev/null && DEFS+=(-DPD_FAST_FACES=1)
@@ -50,6 +50,7 @@ for f in $WQ; do
 done
 for f in sys_port vid_port in_port cd_null; do clang "${CFLAGS[@]}" -c "$TREE/port/$f.c" -o "$O/$f.o" & pids+=($!); done
 clang "${CFLAGS[@]}" -c "$TREE/port/fio/fio_posix.c" -o "$O/fio_posix.o" & pids+=($!)
+clang "${CFLAGS[@]}" -c "$TREE/port/boards/playdate/weapons.c" -o "$O/weapons.o" & pids+=($!)
 
 # display.c as tree_* ; and, for the lazy-upscale check, a copy that always dithers the expanded buffer as old_*
 ren() { echo "-Dqembd_fillrect=$1_fillrect -Dqembd_vidinit=$1_vidinit -Dqembd_get_width=$1_get_width -Dqembd_get_height=$1_get_height -Dqembd_refresh=$1_refresh -Dqembd_display_invalidate=$1_display_invalidate"; }

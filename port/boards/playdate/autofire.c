@@ -5,6 +5,7 @@
 #include <quakedef.h>
 #include "autofire.h"
 #include "keyqueue.h"
+#include "weapons.h"
 
 #define AUTOFIRE_RANGE 2048.0f
 #define AUTOFIRE_AXE_RANGE 64.0f
@@ -21,7 +22,7 @@ static int is_live_monster(edict_t *e)
  * Would firing right now hit a live monster? Mirrors PF_aim (Quake's
  * vertical auto-aim): a monster counts if it is on the crosshair, or inside
  * the sv_aim cone and visible, so height differences don't matter. The axe
- * doesn't auto-aim, so it only counts what is directly in front within reach.
+ * (and Mjolnir) doesn't auto-aim, so it only counts what is directly in front within reach.
  * (The single-player server is local, so its edicts can be read directly.)
  */
 static int enemy_in_sight(void)
@@ -36,7 +37,7 @@ static int enemy_in_sight(void)
 
 	AngleVectors(cl.viewangles, fwd, right, up);
 
-	if ((int)sv_player->v.weapon == IT_AXE)
+	if (pdq_weapon_kind((int)sv_player->v.weapon) == WEAPON_MELEE)
 	{
 		VectorAdd(sv_player->v.origin, sv_player->v.view_ofs, start);
 		VectorMA(start, AUTOFIRE_AXE_RANGE, fwd, end);
@@ -86,10 +87,9 @@ void pdq_autofire_update(int a_held, int allowed)
 
 	want = cl_autofire.value && allowed && enemy_in_sight();
 
-	/* Grenade/rocket launchers: one tap per cooldown instead of holding fire */
-	if (want && sv_player &&
-		((int)sv_player->v.weapon == IT_GRENADE_LAUNCHER ||
-		 (int)sv_player->v.weapon == IT_ROCKET_LAUNCHER))
+	/* Grenade/rocket launchers (and the packs' proximity gun, multi launchers): one tap per
+	 * cooldown instead of holding fire */
+	if (want && sv_player && pdq_weapon_kind((int)sv_player->v.weapon) == WEAPON_HEAVY)
 	{
 		if (auto_ready > cl.time + AUTOFIRE_HEAVY_COOLDOWN)
 			auto_ready = 0; /* clock restarted with a new level */

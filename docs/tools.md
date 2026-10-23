@@ -174,13 +174,16 @@ Host-side checks for the Playdate port. It links the real engine (`winquake/*.c`
 | *(none)* | default | Scripted play: load e1m1, walk, FPS counter, notify lines, console, every menu, view sizes, pause, FOV, weapons, scoreboard, crosshair, then demo1–3, then switch the dithering mode while playing. On every screen update it checks two invariants (below). Exit status 1 if either fails. |
 | `HGOLD=<file>` | golden | Plays demo1–3 with `timedemo` and writes one hash of the 1-bit LCD image per frame, plus hashes of the 8-bit render buffer and z buffer. |
 | `HMENU=1` | menu | Sends keys through the Options menu (crank speed, music, texture detail, light levels, interlaced, dithering, draw distance, max framerate, show FPS) and checks what it does and saves. The row numbers are hard-coded in `menu_test`: update them when a row is added. |
+| `HMODS=1` | mods | Makes fake game folders in the run directory (`hipnotic/pak0.pak`, `zmod/maps/`, and `notamod/` which is not a game), opens the main menu's Mods screen and checks the list, its order, the confirmation and the folder handed to `qembd_restart` (a stub here). Expects id1 to be running. |
 | `HINPUT=1` | input | Checks the key bindings the port relies on (arrow keys, ctrl, space, `,` and `.`) exist and move, turn, fire and jump the player in e1m1, and survive `exec default.cfg`. Fails if the pak has no `default.cfg` and the built-in one (`winquake/defaultcfg.h`) is missing. |
 | `HFRAMES=<prefix>` | frames | Plays a demo in real time and writes the LCD as `<prefix>-NNNN.pbm`. `HDEMO`, `HSKIP`, `HEVERY` (default 2), `HCOUNT` tune it. Used to make `docs/demo.gif`. |
 | `HSHOTS=<dir>` | shots | Plays the demos and writes every `HEVERY`-th (default 25) frame's 3D view (`dD_NNNN.ppm`) and LCD picture. `HDEMOS="1 2 3"` picks demos. |
-| `HMAPS=1` | maps | Loads every shareware map (`start`, `e1m1`–`e1m8`) and turns, walks and fires in each: a crash and limits check. |
+| `HMAPS=1` | maps | Loads every shareware map (`start`, `e1m1`–`e1m8`) and turns, walks and fires in each: a crash and limits check. `HMAPS="hip1m1 hip1m2 …"` loads those maps instead (a mod's, with `HARGS="-game …"`). |
+| `HWEAPONS=<map>` | weapons | On that map gives every weapon (`impulse 9`) and picks each one the Weapon system menu lists through `port/boards/playdate/weapons.c` (compiled in), first to last and back, checking the weapon in hand. With `HARGS="-game hipnotic"` etc. it checks the mission packs' impulses against their QuakeC. |
 | `HINTERLACE=1` | modifier | Any mode above with `r_interlace 1`. |
 | `HCMD="…"` | modifier | Console commands before any mode (e.g. `HCMD="pd_dither 2"`). Every mode except `HMENU` first sets `d_mipcap 0`, `r_lightlevels 64`, `r_interlace 0`, `r_maxdist 0` and `scr_showfps 0`, so pictures stay comparable with the original renderer; use `HCMD` to test the defaults instead (e.g. `HCMD="r_lightlevels 16"`). |
 | `HLOG=1` | modifier | Print engine log lines. |
+| `HARGS="…"` | modifier | Quake's command line for any mode, as the Playdate's launch arguments give it (e.g. `HARGS="-game mymod"`, `-mem 9` for a heap up to 16 MB). |
 
 The first argument is the frame count per scenario (default 150).
 
@@ -265,6 +268,7 @@ tools/hostcheck/run.sh [frames]               # build, set up the run directory,
 HGOLD=file tools/hostcheck/run.sh             # golden mode
 HMENU=1 tools/hostcheck/run.sh                # menu test
 HINPUT=1 tools/hostcheck/run.sh               # key bindings and movement test
+HMODS=1 tools/hostcheck/run.sh                # Mods screen test
 HINTERLACE=1 tools/hostcheck/run.sh           # any of the above with interlaced rendering
 NEW=1 tools/hostcheck/run.sh                  # …with the new renderer
 ```

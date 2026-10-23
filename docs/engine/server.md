@@ -212,6 +212,9 @@ Quake does not clip against triangles but against **hulls**: copies of the BSP t
 three (point, player-sized, and large-monster-sized). `SV_HullForEntity(ent, mins, maxs, &offset)` picks the hull of a `SOLID_BSP` entity's model by the size of the
 thing being moved; any other entity is clipped as a plain box (`SV_HullForBox`).
 `SV_HullPointContents(hull, num, p)` finds the `CONTENTS_*` at a point; `SV_RecursiveHullCheck` traces a line through the hull tree and fills in a `trace_t`.
+**Port change:** only the near side of a node the line crosses is still a recursive call; going down one side, and on past the node, is a loop.
+The recursion was as deep as the clip hull (107 calls of 80 bytes for one floor check in Scourge of Armagon's `hip2m3`) and overflowed the Playdate's
+~10 KB stack ([Mods and mission packs](../port/mods.md#the-stack-overflow)). Same arithmetic: 630 000 traces on 93 levels gave byte-identical results to the original.
 
 ```c
 typedef struct {
@@ -228,6 +231,8 @@ typedef struct {
 Entities are stored in a binary tree of areas (`areanode_t`, depth 4) so that tests only visit nearby ones. `SV_ClearWorld` builds it once per level,
 `SV_LinkEdict(ent, touch_triggers)` (re)inserts an entity whenever it moves and fires its trigger touches, `SV_UnlinkEdict` removes it,
 `SV_TouchLinks` finds triggers an entity overlaps, `SV_FindTouchedLeafs` records the BSP leaves an entity is in (used by the client for visibility).
+**Port change:** `SV_FindTouchedLeafs` recurses only where the box straddles a plane (the second side is a loop), for the same reason (141 levels deep in Scourge of Armagon);
+the leaves come out in the same order (321 000 links compared).
 
 ### Moves
 

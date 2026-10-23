@@ -53,9 +53,10 @@ static int update(void *ud)
 		return 1;
 
 	case ST_INIT:                         // frame 2: the long part
+		argc = build_args(argv);          // launch arguments, or -game <game.txt> (below)
 		if (setjmp(frame_jmp)) return 1;  // Sys_Error longjmps back here
 		in_frame = 1;
-		if (qembd_init(1, argv) != 0) { /* "Quake failed to start" */ }
+		if (qembd_init(argc, argv) != 0) { /* "Quake failed to start" */ }
 		apply_run();                      // cl_forwardspeed / cl_backspeed = 400
 		Key_SetBinding(',', "+moveleft");
 		Key_SetBinding('.', "+moveright");
@@ -78,7 +79,18 @@ static int update(void *ud)
 **Error handling.** Quake's `Sys_Error` never returns, but a Playdate callback must. So
 `qembd_fatal` (called by `Sys_Error`) stores a message on screen, sets `ST_STOPPED`, and `longjmp`s
 back to the `setjmp` in `update()`. `qembd_quit` (called by `Sys_Quit`) does the same with the text
-"Quake has exited.".
+"Quake has exited.". When a mod is running the error message ends with how to start without it (hold B).
+
+### Game folder: launch arguments, `game.txt`, restart
+
+Quake's command line is built by `build_args` when `ST_INIT` starts ([Mods and mission packs](mods.md)):
+
+- **B held**: no arguments, and `Data/game.txt` is deleted (plain Quake, the choice forgotten).
+- **Launch arguments** (`getLaunchArgs`: the Simulator's command line, the device console's `run`): split at spaces and passed as they are.
+- Otherwise **`game.txt`**: `-game <folder>` if the folder exists (`listfiles` succeeds on it); a stale `game.txt` is deleted.
+
+`qembd_restart(gamedir)` (the Mods menu) writes `game.txt` (or deletes it for Quake) and calls `restartGame("")`. The system then sends
+`kEventTerminate` (options saved, below) and starts the game again, which reads `game.txt`.
 
 ### Time and memory hooks
 
@@ -284,6 +296,7 @@ Implements `Sys_FileOpenRead` … `Sys_File_gets` on `playdate->file`. Handles a
 - The size returned by `Sys_FileOpenRead` is measured by seeking to the end, because `stat` only sees
   Data-folder files.
 - `pdq_path` normalises the paths Quake builds (`".//id1/pak0.pak"` → `"id1/pak0.pak"`).
+- `Sys_ListDir` (the Mods menu) calls `listfiles`, which lists the `.pdx` and the Data folder as one: a folder in both is listed once, folders end in `/`.
 
 ```c
 const char *pdq_path(const char *path, char *out, size_t size);   // normalise
@@ -362,8 +375,9 @@ live monster is in the line of fire:
 
 - `enemy_in_sight()` reads the local server's edicts directly (single player). It casts a straight
   ray 2048 units ahead and then mirrors `PF_aim`: any monster inside the `sv_aim` cone and visible
-  also counts. The axe only counts what is within 64 units straight ahead.
-- Grenade and rocket launchers are tapped once per `AUTOFIRE_HEAVY_COOLDOWN` (2 s) rather than held.
+  also counts. The axe (and Mjolnir) only counts what is within 64 units straight ahead.
+- Grenade and rocket launchers (and the mission packs' proximity gun and multi launchers) are tapped once per `AUTOFIRE_HEAVY_COOLDOWN` (2 s) rather than held.
+- Which weapon is which comes from `pdq_weapon_kind` ([`weapons.c`](#weaponsc--weaponsh)), as the item bits differ between the games.
 - If A is held, autofire stands down; A owns the key.
 
 ```c
@@ -380,15 +394,24 @@ if (want != auto_down) {
 int  pdq_weapons_scan(int *current);      // list usable weapons; returns count, *current = active index
 extern const char *pdq_weapon_names[];    // names for the system-menu options item
 void pdq_weapon_select(int index);        // queue "impulse N"
+int  pdq_weapon_kind(int weapon);         // WEAPON_MELEE, WEAPON_HEAVY or 0 (autofire)
 ```
 
-A static table (`Axe` … `Lightning`, in impulse order) says which `IT_*` item bit and `STAT_*`
-ammo counter each weapon needs. A weapon is listed only if `cl.items` has it and the ammo is at
-least its `ammo_min`. Selecting one queues the impulse the original game would send:
+One static table per game (`quake_weapons`, `hipnotic_weapons`, `rogue_weapons`, chosen by `hipnotic` / `rogue`), in impulse order with
+each mission pack weapon after the one it shares a key with. An entry says which item bit owns the weapon (also its `.weapon` value),
+which impulse selects it, where its ammo is and how much it needs. A weapon is listed only if `cl.items` has it and the ammo is at
+least its `ammo_min`. The ammo is the client's `STAT_*`, except in Dissolution of Eternity, which keeps each ammo type in a QuakeC field of
+its own (`ammo_nails1`, `ammo_lava_nails`, ...): those are read from the player's edict (`ED_FindField`; the single-player server is local).
+The weapon in hand is the local server's player's `.weapon` (`active_weapon`; the client's stat is a byte in Quake's protocol, so the axe's 4096 arrives as 0).
+Selecting the weapon in hand sends nothing (in the mission packs its key would toggle to the pack's weapon). A weapon with a `toggle` (Scourge of Armagon's
+proximity gun, reached with impulse 6 from the grenade launcher) gets its impulse twice, a frame apart (`impulse 6; wait; impulse 6`), unless the weapon it
+toggles from is in hand; anything else queues its impulse:
 
 ```c
-Cbuf_AddText(va("impulse %d\n", avail_impulse[index]));
+Cbuf_AddText(va("impulse %d\n", avail[index]->impulse));
 ```
+
+The impulses were checked against the packs' 1997 QuakeC (see [Mods and mission packs](mods.md#mission-packs)); `HWEAPONS` in the host check selects every weapon of each game.
 
 ---
 

@@ -36,6 +36,10 @@ int Sys_FileWrite (int handle, void *data, int count);
 int	Sys_FileTime (char *path);
 void Sys_mkdir (char *path);
 
+// calls func once for every entry of the directory path (not recursive), with the
+// entry's name; directory names end in '/'. Returns -1 if path can't be listed.
+int Sys_ListDir (char *path, void (*func)(char *name, void *data), void *data);
+
 //
 // memory protection
 //

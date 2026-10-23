@@ -145,7 +145,7 @@ void Cbuf_Execute (void)
 {
 	int		i;
 	char	*text;
-	char	line[1024];
+	static char	line[1024];	// static: a level loads inside the "map" command, and the Playdate's stack is ~10 KB
 	int		quotes;
 	
 	while (cmd_text.cursize)

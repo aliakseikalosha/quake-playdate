@@ -139,8 +139,9 @@ of `~/.Playdate/config`), picks defaults, and turns options into compile definit
 | `PD_BENCH_CMDS` / `PD_BENCH_COUNT` / `PD_BENCH_FIRST` | `""` / 3 / 1 | same | Console commands to run first, how many demos, which demo first. |
 
 Always defined for Playdate builds: `QEMBD_PLAYDATE=1`, `TARGET_EXTENSION=1`,
-`DEFAULT_MEM_SIZE=(7*1024*1024)`, `DEFAULT_MIN_MEM_SIZE=(4*1024*1024)` (the Quake heap
-backs off in 512 KiB steps from the default to the minimum, see `qembd_init`),
+`DEFAULT_MEM_SIZE=(10*1024*1024)`, `DEFAULT_MIN_MEM_SIZE=(4*1024*1024)` (the Quake heap
+backs off in 512 KiB steps from the default to the minimum, see `qembd_init`; 10 MB since the mission packs, which use up to
+7.4 MB of it on the device, see [Mods and mission packs](port/mods.md#memory)),
 and either `TARGET_PLAYDATE=1` (device) or `TARGET_SIMULATOR=1` (host).
 
 Every C file also gets [`pd_compat.h`](../port/boards/playdate/pd_compat.h)
@@ -259,8 +260,8 @@ and works on the built `.pdx` only; `Source/id1/` is never touched:
 
 | Build | `pak0_demo.pak` exists | In the `.pdx` |
 | --- | --- | --- |
-| `PD_RELEASE=ON` | yes | `id1/pak0.pak` is `pak0_demo.pak`; there is no `pak0_demo.pak` and no `id1/music` |
-| `PD_RELEASE=ON` | no | `id1/pak0.pak` and `id1/music` as in `Source/id1/` |
+| `PD_RELEASE=ON` | yes | `id1/pak0.pak` is `pak0_demo.pak`; there is no `pak0_demo.pak`, no `id1/music` and no other game folder (mods, mission packs: a folder with a `.pak`, `progs.dat`, `maps/`, `progs/`, `gfx/` or `sound/`, as the [Mods menu](port/mods.md) sees them) |
+| `PD_RELEASE=ON` | no | `id1/pak0.pak`, `id1/music` and the game folders as in `Source/` |
 | `PD_RELEASE=OFF` (default) | either | `id1/pak0.pak` as in `Source/id1/`; `pak0_demo.pak` is deleted from the `.pdx` |
 
 ```shell
