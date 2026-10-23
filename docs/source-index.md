@@ -2,7 +2,7 @@
 
 [← Documentation index](README.md)
 
-Every file in the repository (208 files, 153 of them C, header or assembly source), with what it does, whether it is built, and a link to its detailed description. The **File** column opens the source; the **Docs** column opens the section that describes it. Names in the descriptions are links to the related files' sections, so you can follow a call from one file to the next.
+Every file in the repository (209 files, 153 of them C, header or assembly source), with what it does, whether it is built, and a link to its detailed description. The **File** column opens the source; the **Docs** column opens the section that describes it. Names in the descriptions are links to the related files' sections, so you can follow a call from one file to the next.
 
 - Looking for a file by name? Jump to [Find a file by name](#find-a-file-by-name).
 - Looking for what to read first? See [Start here](README.md#start-here) in the index.
@@ -124,13 +124,13 @@ How the `.pdx` is configured, built and packaged. Details: [Build system](build-
 
 | File | Lines | Built | What it does | Docs |
 | --- | ---: | --- | --- | --- |
-| [`CMakeLists.txt`](../port/boards/playdate/CMakeLists.txt) | 88 | build | Defines the game target (device executable or Simulator library), its source list and the post-build steps. | [build](build-system.md#playdate-board-cmakeliststxt) |
+| [`CMakeLists.txt`](../port/boards/playdate/CMakeLists.txt) | 103 | build | Defines the game target (device executable or Simulator library), its source list and the post-build steps. | [build](build-system.md#playdate-board-cmakeliststxt) |
 | [`platform.cmake`](../port/boards/playdate/platform.cmake) | 140 | build | Every `PD_*` option, the compile definitions they produce, the force-included [`pd_compat.h`](port/playdate.md#pd_compath), and SDK and toolchain selection. | [build](build-system.md#playdate-platformcmake) |
 | [`toolchain.cmake`](../port/boards/playdate/toolchain.cmake) | 17 | build | The Arm GCC cross-compilation toolchain for the device build. | [build](build-system.md#toolchaincmake) |
 | [`pdx_buildnumber.cmake`](../port/boards/playdate/pdx_buildnumber.cmake) | 37 | build | Post-build step: gives every build the next build number in the built `pdxinfo`. | [build](build-system.md#playdate-board-cmakeliststxt) |
 | [`pdx_pak.cmake`](../port/boards/playdate/pdx_pak.cmake) | 52 | build | Post-build step: decides which game data the `.pdx` carries. A release build with a `pak0_demo.pak` ships it as `id1/pak0.pak` and leaves out the music; every other build drops `pak0_demo.pak`. | [build](build-system.md#which-pak0pak-the-pdx-gets) |
 | [`pdx_rename.cmake`](../port/boards/playdate/pdx_rename.cmake) | 16 | build | Profiling builds only: appends tags such as "profile, demo1" to the launcher title. | [build](build-system.md#playdate-board-cmakeliststxt) |
-| [`Source/pdxinfo`](../port/boards/playdate/Source/pdxinfo) | 7 | data | Game metadata: `name`, `author`, `bundleID`, `version`, `buildNumber`. | [build](build-system.md#source) |
+| [`Source/pdxinfo`](../port/boards/playdate/Source/pdxinfo) | 8 | data | Game metadata: `name`, `author`, `bundleID`, `version`, `buildNumber`, and the launcher assets (`imagePath`, `launchSoundPath`) made by [`gen-launcher-assets.py`](tools.md#scriptsgen-launcher-assetspy). | [build](build-system.md#source) |
 | [`Source/id1/.gitkeep`](../port/boards/playdate/Source/id1/.gitkeep) | 0 | data | Keeps the otherwise git-ignored `Source/id1/` (where your `pak0.pak` and music go) in the tree. | [build](build-system.md#source) |
 | [`.gitignore`](../port/boards/playdate/.gitignore) | 7 | config | Ignores `Source/pdex.*`, `Source/id1/` and `.build_number`. | [build](build-system.md#source) |
 | [`DOS-CONFIG.CFG.bak`](../port/boards/playdate/DOS-CONFIG.CFG.bak) | 78 | unused | A stray backup of a DOS-era Quake config; not used by the build. | [build](build-system.md#source) |
@@ -207,7 +207,7 @@ Everything drawn on top of or around the 3D view. Page: [Screen, HUD, console an
 | [`console.h`](../winquake/console.h) | 46 | header | Console interface (`Con_*`). | [ui](engine/ui.md#consoleh--consolec) |
 | [`console.c`](../winquake/console.c) | 655 | always | The drop-down console and notify lines. | [ui](engine/ui.md#consoleh--consolec) |
 | [`menu.h`](../winquake/menu.h) | 39 | header | Menu entry points (`M_Init`, `M_Draw`, `M_Keydown`, `M_Menu_Options_Shortcut`). | [ui](engine/ui.md#menuh--menuc) |
-| [`menu.c`](../winquake/menu.c) | 3786 | always | All of Quake's menus, including the Playdate Options screen (Music, Crank speed, Dithering, Draw distance, Max framerate, Show FPS, …). | [ui](engine/ui.md#menuh--menuc) |
+| [`menu.c`](../winquake/menu.c) | 3790 | always | All of Quake's menus, including the Playdate Options screen (Music, Crank speed, Dithering, Draw distance, Max framerate, Show FPS, …). | [ui](engine/ui.md#menuh--menuc) |
 
 ## Server, world and physics
 
@@ -381,8 +381,9 @@ Run on your computer around a device build. Page: [Scripts and tools](tools.md).
 | [`install-device.sh`](../scripts/install-device.sh) | 68 | tool | Copies the device `.pdx` to a USB-connected Playdate and launches it. | [tools](tools.md#scriptsinstall-devicesh) |
 | [`pd-bench.sh`](../scripts/pd-bench.sh) | 55 | tool | Installs a profiling build, runs it for a set time and fetches `prof.csv`. | [tools](tools.md#scriptspd-benchsh) |
 | [`pd-report.py`](../scripts/pd-report.py) | 134 | tool | Summarises and compares `prof.csv` files, including the `--ab` paired comparison. | [tools](tools.md#scriptspd-reportpy) |
+| [`gen-launcher-assets.py`](../scripts/gen-launcher-assets.py) | 302 | tool | Makes the launcher card, icon, launch image, wrapping paper and launch sound from the game data. | [tools](tools.md#scriptsgen-launcher-assetspy) |
 | [`gen-bluenoise.py`](../scripts/gen-bluenoise.py) | 102 | tool | Generates the blue-noise tile ([`bluenoise.h`](port/playdate.md#bluenoiseh)) with void-and-cluster. | [tools](tools.md#scriptsgen-bluenoisepy) |
-| [`gen-source-index.py`](../scripts/gen-source-index.py) | 616 | tool | Generates the [source code index](source-index.md) (this page) from its own file list, and checks the docs' links. | [tools](tools.md#scriptsgen-source-indexpy) |
+| [`gen-source-index.py`](../scripts/gen-source-index.py) | 617 | tool | Generates the [source code index](source-index.md) (this page) from its own file list, and checks the docs' links. | [tools](tools.md#scriptsgen-source-indexpy) |
 | [`__pycache__/pd-report.cpython-314.pyc`](../scripts/__pycache__/pd-report.cpython-314.pyc) | — | generated | Python bytecode cache of `pd-report.py`; not source. | — |
 
 ## Host check (`tools/hostcheck/`)
@@ -391,7 +392,7 @@ Runs the real engine and the real [`display.c`](port/playdate.md#displayc) on th
 
 | File | Lines | Built | What it does | Docs |
 | --- | ---: | --- | --- | --- |
-| [`hostcheck.c`](../tools/hostcheck/hostcheck.c) | 1123 | host check | The test program: scripted scenes, menu and input tests, golden frame hashes, map tours and screenshot dumps. | [tools](tools.md#toolshostcheckhostcheckc) |
+| [`hostcheck.c`](../tools/hostcheck/hostcheck.c) | 1127 | host check | The test program: scripted scenes, menu and input tests, golden frame hashes, map tours and screenshot dumps. | [tools](tools.md#toolshostcheckhostcheckc) |
 | [`build.sh`](../tools/hostcheck/build.sh) | 77 | tool | Builds [`hostcheck.c`](tools.md#toolshostcheckhostcheckc) against a source tree, in either renderer, with switches for the original code paths. | [tools](tools.md#toolshostcheckbuildsh) |
 | [`run.sh`](../tools/hostcheck/run.sh) | 17 | tool | Builds and runs the host check in its different modes. | [tools](tools.md#toolshostcheckrunsh) |
 | [`golden-compare.py`](../tools/hostcheck/golden-compare.py) | 24 | tool | Compares two golden hash files frame by frame. | [tools](tools.md#toolshostcheckgolden-comparepy) |
@@ -410,8 +411,8 @@ These pages. Start at the [documentation index](README.md).
 | [`settings.md`](../docs/settings.md) | 39 | doc | The defaults and every Options menu setting, the dithering modes and their cost. | [settings](settings.md) |
 | [`profiling.md`](../docs/profiling.md) | 40 | doc | The on-device profiler and what it measured about the hardware. | [profiling](profiling.md) |
 | [`picture-check.md`](../docs/picture-check.md) | 23 | doc | Using the host check to show an optimisation does not change the picture. | [picture-check](picture-check.md) |
-| [`build-system.md`](../docs/build-system.md) | 293 | doc | CMake files, every `PD_*` option, release builds, which `pak0.pak` the `.pdx` gets, editor tasks. | [build](build-system.md) |
-| [`tools.md`](../docs/tools.md) | 308 | doc | The scripts and the host check harness. | [tools](tools.md) |
+| [`build-system.md`](../docs/build-system.md) | 294 | doc | CMake files, every `PD_*` option, release builds, which `pak0.pak` the `.pdx` gets, editor tasks. | [build](build-system.md) |
+| [`tools.md`](../docs/tools.md) | 332 | doc | The scripts and the host check harness. | [tools](tools.md) |
 | [`port/overview.md`](../docs/port/overview.md) | 288 | doc | The shared platform layer and the `qembd_*` board interface. | [overview](port/overview.md) |
 | [`port/playdate.md`](../docs/port/playdate.md) | 538 | doc | The Playdate board: main loop, display and dithering, files, sound, music, profiler. | [playdate](port/playdate.md) |
 | [`port/game-data.md`](../docs/port/game-data.md) | 249 | doc | The shareware and the 2021 re-release `pak0.pak`: what the engine needs from them. | [game-data](port/game-data.md) |
@@ -444,7 +445,7 @@ Every source and build file by name; each link opens the section that describes 
 
 **F** · [`fio.c`](port/playdate.md#fioc) · [`fio_posix.c`](port/overview.md#portfiofio_posixc)
 
-**G** · [`gen-bluenoise.py`](tools.md#scriptsgen-bluenoisepy) · [`gen-source-index.py`](tools.md#scriptsgen-source-indexpy) · [`.gitignore`](README.md#not-documented) · [`port/boards/playdate/.gitignore`](build-system.md#source) · [`.gitkeep`](build-system.md#source) · [`golden-compare.py`](tools.md#toolshostcheckgolden-comparepy) · [`gpl-2.0.txt`](../gpl-2.0.txt)
+**G** · [`gen-bluenoise.py`](tools.md#scriptsgen-bluenoisepy) · [`gen-launcher-assets.py`](tools.md#scriptsgen-launcher-assetspy) · [`gen-source-index.py`](tools.md#scriptsgen-source-indexpy) · [`.gitignore`](README.md#not-documented) · [`port/boards/playdate/.gitignore`](build-system.md#source) · [`.gitkeep`](build-system.md#source) · [`golden-compare.py`](tools.md#toolshostcheckgolden-comparepy) · [`gpl-2.0.txt`](../gpl-2.0.txt)
 
 **H** · [`host.c`](engine/core.md#hostc) · [`host_cmd.c`](engine/core.md#host_cmdc) · [`hostcheck.c`](tools.md#toolshostcheckhostcheckc)
 

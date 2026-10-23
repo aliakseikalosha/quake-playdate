@@ -93,7 +93,7 @@ allocation after the overflow, so that is where the damage showed. With the over
 
 ## Using the Mods menu
 
-Main menu → **Mods** (the item under Quit). The list shows the running game in white. A on another one asks first
+Main menu → **Mods** (the last item, under Help/Ordering). The list shows the running game in white. A on another one asks first
 (*Restart the game in …? Progress not saved is lost.*); A again saves the options and restarts the game in it, B goes back.
 A on the running game, or B, returns to the main menu.
 

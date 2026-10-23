@@ -289,8 +289,10 @@ void M_ToggleMenu_f (void)
 /* MAIN MENU */
 
 int	m_main_cursor;
-#define	MAIN_ITEMS	6		// the five of gfx/mainmenu.lmp, then Mods (drawn as text)
-#define	MAIN_MODS	5
+#define	MAIN_ITEMS	5		// the first four of gfx/mainmenu.lmp, then Mods (drawn as text)
+#define	MAIN_MODS	4
+#define	MAIN_PIC_ROWS	81		// gfx/mainmenu.lmp down to Help/Ordering's descenders: Quit is left
+						// out (the Playdate menu's Home leaves the game)
 
 
 void M_Menu_Main_f (void)
@@ -323,11 +325,17 @@ static void M_MainModsDraw (int y);
 void M_Main_Draw (void)
 {
 	qpic_t	*p;
+	int		height;
 
 	M_DrawTransPic (16, 4, Draw_CachePic ("gfx/qplaque.lmp") );
 	p = Draw_CachePic ("gfx/ttl_main.lmp");
 	M_DrawPic ( (320-p->width)/2, 4, p);
-	M_DrawTransPic (72, 32, Draw_CachePic ("gfx/mainmenu.lmp") );
+	p = Draw_CachePic ("gfx/mainmenu.lmp");
+	height = p->height;		// rows are stored top down, so a lower height drops the bottom ones
+	if (p->height > MAIN_PIC_ROWS)
+		p->height = MAIN_PIC_ROWS;
+	M_DrawTransPic (72, 32, p);
+	p->height = height;
 	M_MainModsDraw (32 + MAIN_MODS * 20);
 
 	M_DrawTransPic (54, 32 + m_main_cursor * 20,Draw_CachePic( va("gfx/menudot%i.lmp", _M_HostTime10Mod6()+1 ) ) );
@@ -373,10 +381,6 @@ void M_Main_Key (int key)
 
 		case 3:
 			M_Menu_Help_f ();
-			break;
-
-		case 4:
-			M_Menu_Quit_f ();
 			break;
 
 		case MAIN_MODS:

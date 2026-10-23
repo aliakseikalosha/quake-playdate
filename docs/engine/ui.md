@@ -181,12 +181,12 @@ All of Quake's menus. A menu is a `m_state` plus three functions: `M_X_Draw`, `M
 
 | Menu | Entry point | Notes |
 | --- | --- | --- |
-| Main | `M_Menu_Main_f` | Single Player, Multiplayer, Options, Help, Quit (`gfx/mainmenu.lmp`), then **Mods** drawn as text under it (`MAIN_MODS`). |
+| Main | `M_Menu_Main_f` | Single Player, Multiplayer, Options, Help (the top `MAIN_PIC_ROWS` rows of `gfx/mainmenu.lmp`: its Quit row is cut off, the Playdate's own menu leaves the game), then **Mods** drawn as text under it (`MAIN_MODS`). `M_Menu_Quit_f` is still there for the `menu_quit` command. |
 | **Mods** | `M_Menu_Mods_f` (`menu_mods`) | Port addition: the game folders next to `id1`; picking one calls `qembd_restart` ([Mods and mission packs](../port/mods.md)). |
 | Single player | `M_Menu_SinglePlayer_f`, `M_Menu_Load_f`, `M_Menu_Save_f` | New game, load, save. |
 | **Options** | `M_Menu_Options_f`, **`M_Menu_Options_Shortcut`** | Rewritten for the Playdate (below). |
 | Help | `M_Menu_Help_f` | The help screens. |
-| Quit | `M_Menu_Quit_f` | |
+| Quit | `M_Menu_Quit_f` | Not in the main menu; opened by the `quit` and `menu_quit` commands. |
 | Multiplayer, LAN, serial, modem, setup, game options, server list, search | `M_Menu_MultiPlayer_f`, `M_Menu_LanConfig_f`, … | Present but only meaningful with a network driver (`net_dgrm.c`). |
 | Keys, Video | `M_Menu_Keys_f`, `M_Menu_Video_f` | Not reachable on the Playdate (the Options menu has no "Customize controls" or "Video"). |
 

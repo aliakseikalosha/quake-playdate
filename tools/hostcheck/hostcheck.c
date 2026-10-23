@@ -924,9 +924,13 @@ static int mods_test(void)
 	cmd("menu_main\n");
 	run(3);
 	dump_lcd("main");
-	for (i = 0; i < 5; i++)
+	press(K_UPARROW);
+	MCHECK(m_main_cursor == 4, "up from the top wraps to Mods, the last item (no Quit)");
+	press(K_DOWNARROW);
+	MCHECK(m_main_cursor == 0, "and down from Mods wraps to the top");
+	for (i = 0; i < 4; i++)
 		press(K_DOWNARROW);
-	MCHECK(m_main_cursor == 5, "5 x down reaches Mods");
+	MCHECK(m_main_cursor == 4, "4 x down reaches Mods");
 	press(K_ENTER);
 	MCHECK(m_state == M_STATE_MODS, "Mods opens");
 	dump_lcd("mods");

@@ -25,6 +25,21 @@ else()
 	target_link_libraries(${PLAYDATE_GAME_NAME} winquake port)
 endif()
 
+# The launcher's card, icon, launch image and launch sound (pdxinfo imagePath, launchSoundPath) are
+# made from the game data, so like it they are not in git (Source/launcher/): made here if missing.
+if(NOT EXISTS ${CMAKE_CURRENT_LIST_DIR}/Source/launcher/card.png)
+	find_package(Python3 COMPONENTS Interpreter)
+	if(Python3_FOUND)
+		execute_process(
+			COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_LIST_DIR}/../../../scripts/gen-launcher-assets.py
+			RESULT_VARIABLE _pd_launcher_result
+		)
+	endif()
+	if(NOT Python3_FOUND OR NOT _pd_launcher_result EQUAL 0)
+		message(WARNING "no launcher assets in Source/launcher/: run scripts/gen-launcher-assets.py")
+	endif()
+endif()
+
 # Put the .pdx in the build tree instead of next to the sources.
 set(PRODUCT_DIR ${CMAKE_BINARY_DIR} CACHE STRING "Built PDX directory" FORCE)
 include(${SDK}/C_API/buildsupport/playdate_game.cmake)

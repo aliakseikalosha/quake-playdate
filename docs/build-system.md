@@ -240,7 +240,8 @@ the SDK's own `C_API/buildsupport/arm.cmake`. Omit it and you get the Simulator 
 
 | Path | Content |
 | --- | --- |
-| `Source/pdxinfo` | Game metadata: `name`, `author`, `bundleID`, `version`, `buildNumber`. |
+| `Source/pdxinfo` | Game metadata: `name`, `author`, `bundleID`, `version`, `buildNumber`; `imagePath=launcher` and `launchSoundPath=launcher/launch` point at the launcher assets. |
+| `Source/launcher/` | The launcher's `card.png`, `card-pressed.png`, `icon.png`, `launchImage.png`, `wrapping-pattern.png` and `launch.wav`, made from `pak0.pak` by [`gen-launcher-assets.py`](tools.md#scriptsgen-launcher-assetspy). **Not in git** (derived from the game data); the CMake configure step makes them when `card.png` is missing. |
 | `Source/id1/pak0.pak` | Quake game data. **Not in git** and not redistributable; copy your own (the shareware one is fine). |
 | `Source/id1/music/Quake02.wav` ... `Quake11.wav` | Optional: the music (CD tracks 2-11), see [`cd_pd.c`](port/playdate.md#cd_pdc). `pdc` turns them into `.pda`; the re-release's ten tracks are about 590 MB as PCM and about 150 MB as ADPCM (use ADPCM). |
 | `Source/id1/pak0_demo.pak` | Optional: the shareware `pak0.pak` under another name. With `-DPD_RELEASE=ON` (`scripts/release-device.sh`) the built `.pdx` gets it as `id1/pak0.pak`, replacing `pak0.pak`; in every other build it is left out of the `.pdx`. |
@@ -250,7 +251,7 @@ the SDK's own `C_API/buildsupport/arm.cmake`. Omit it and you get the Simulator 
 and is not used by the build.
 
 [`port/boards/playdate/.gitignore`](../port/boards/playdate/.gitignore) keeps the generated and non-redistributable
-files out of git: `Source/pdex.*` (build products), `Source/id1/` (the game data) and `.build_number`.
+files out of git: `Source/pdex.*` (build products), `Source/id1/` (the game data), every other folder in `Source/` (mods, mission packs, `launcher/`) and `.build_number`.
 
 ### Which pak0.pak the `.pdx` gets
 

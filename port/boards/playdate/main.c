@@ -224,6 +224,23 @@ static void show_message(const char *title, const char *msg)
 								 kWrapWord, kAlignTextLeft);
 }
 
+/* The launcher's launch image (pdxinfo imagePath, scripts/gen-launcher-assets.py), so loading looks
+ * like the launch went on; the plain message without it */
+static void show_splash(void)
+{
+	PlaydateAPI *pd = qembd_pd;
+	const char *err = NULL;
+	LCDBitmap *image = pd->graphics->loadBitmap("launcher/launchImage", &err);
+
+	if (!image)
+	{
+		show_message("Quake", "Loading...");
+		return;
+	}
+	pd->graphics->drawBitmap(image, 0, 0, kBitmapUnflipped);
+	pd->graphics->freeBitmap(image); /* drawn into the frame buffer: not needed after */
+}
+
 static void stop_with_message(const char *title, const char *msg)
 {
 	state = ST_STOPPED;
@@ -417,7 +434,7 @@ static int update(void *ud)
 	case ST_SPLASH:
 		/* Draw first: loading the pak takes a while */
 		pdprof_stage("splash");
-		show_message("Quake", "Loading...");
+		show_splash();
 		state = ST_INIT;
 		return 1;
 

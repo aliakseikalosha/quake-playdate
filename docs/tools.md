@@ -13,6 +13,7 @@ Two directories hold the helper programs:
 | [`scripts/install-device.sh`](#scriptsinstall-devicesh) | Copy the device `.pdx` to a USB-connected Playdate and launch it |
 | [`scripts/pd-bench.sh`](#scriptspd-benchsh) | Run a profiling build on the device and fetch `prof.csv` |
 | [`scripts/pd-report.py`](#scriptspd-reportpy) | Summarise and compare `prof.csv` files |
+| [`scripts/gen-launcher-assets.py`](#scriptsgen-launcher-assetspy) | Generate the launcher card, icon, launch image and launch sound |
 | [`scripts/gen-bluenoise.py`](#scriptsgen-bluenoisepy) | Generate the blue-noise dither tile |
 | [`scripts/gen-source-index.py`](#scriptsgen-source-indexpy) | Generate the [source code index](source-index.md) and check the docs' links |
 | [`tools/hostcheck/hostcheck.c`](#toolshostcheckhostcheckc) | The host-side test program |
@@ -114,6 +115,29 @@ hdr = line.split(",")[1:]            # "H,ms,period,frame,input,..."
 v   = line.split(",")[1:]            # "P,12345,33012,31200,..."
 rows.append(dict(zip(hdr, map(int, v))))
 ```
+
+## `scripts/gen-launcher-assets.py`
+
+Makes the assets the Playdate launcher shows for the game ([`pdxinfo`](build-system.md#source)'s `imagePath=launcher` and `launchSoundPath=launcher/launch`) out of the game's own data.
+
+```shell
+scripts/gen-launcher-assets.py                       # Source/id1/pak0_demo.pak (else pak0.pak) -> Source/launcher/
+scripts/gen-launcher-assets.py <pak0.pak> <out dir>
+```
+
+| File | Size | What |
+| --- | --- | --- |
+| `card.png` | 350×155 | Q logo, "QUAKE" and "PLAYDATE" on dark stone: the card in the launcher's cards view |
+| `card-pressed.png` | 350×155 | The card inverted, while A is held |
+| `icon.png` | 32×32 | The Q logo, for the list view |
+| `launchImage.png` | 400×240 | Large Q logo and "LOADING", shown while the game loads |
+| `wrapping-pattern.png` | 400×240 | Rows of small Q logos: wrapping paper of a newly downloaded copy |
+| `launch.wav` | 0.3 s | The ammo pickup sound (`sound/weapons/lock4.wav`) as 16-bit PCM, played during the launch animation (`pdc` makes it a `.pda`) |
+
+- Pure Python, standard library only, deterministic; about 2 s.
+- The Q logo is cut out of `gfx/conback.lmp` (the console background, where it is a dark embossed shape): brightness blurred over 5×5, thresholded, the largest connected shape kept, its edges rounded, then resampled with 4×4 supersampling. The text is the console font (`CONCHARS` in `gfx.wad`, its lit face only), the stone is `BACKTILE` ordered-dithered to at most 25 % white. Every image is plain black and white, so `pdc` does not dither it again.
+- The output is derived from the game data and is not in git (`Source/*/` is ignored). The CMake configure step runs the script when `Source/launcher/card.png` is missing; after changing the script, run it by hand. A release build keeps `launcher/`: [`pdx_pak.cmake`](build-system.md#which-pak0pak-the-pdx-gets) only drops folders that hold game data.
+- To use another sound, change `SOUND` at the top of the script (any `.wav` in the pak).
 
 ## `scripts/gen-bluenoise.py`
 

@@ -1,7 +1,8 @@
-name=Quake Playdate
+name=Quake: Playdate Edition
 author=Aliaksei Kalosha
-description=Quake port for a Playdate base on sysprog21 "Quake for embedded devices"
+description=Quake port for a Playdate
 bundleID=com.aliakseikalosha.quake
-version=0.3
+version=0.4
 buildNumber=90
-imagePath=
+imagePath=launcher
+launchSoundPath=launcher/launch

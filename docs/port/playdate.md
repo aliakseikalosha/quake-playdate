@@ -41,14 +41,14 @@ Entry point, frame loop and input. Everything the Playdate OS touches goes throu
 
 `update()` is the callback registered with `setUpdateCallback`. It runs a four-state machine
 (`ST_SPLASH`, `ST_INIT`, `ST_RUN`, `ST_STOPPED`) because loading `pak0.pak` takes a while and the
-user must see something first:
+user must see something first. The splash is the launcher's own `launchImage` (`launcher/launchImage.pdi`, made by [`gen-launcher-assets.py`](../tools.md#scriptsgen-launcher-assetspy)), so the screen stays the same from the launch animation until Quake's first frame; without it, a plain "Quake / Loading..." message:
 
 ```c
 static int update(void *ud)
 {
 	switch (state) {
-	case ST_SPLASH:                       // frame 1: draw "Loading..." and return so it shows
-		show_message("Quake", "Loading...");
+	case ST_SPLASH:                       // frame 1: draw the splash and return so it shows
+		show_splash();                    // launcher/launchImage, else "Quake / Loading..."
 		state = ST_INIT;
 		return 1;
 
