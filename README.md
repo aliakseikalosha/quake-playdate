@@ -8,21 +8,19 @@ Source documentation is in [docs/](docs/README.md): a [source code index](docs/s
 
 ![Quake demo 1 on the Playdate screen](docs/demo.gif)
 
-*Demo 1 as the Playdate screen shows it. Captured on a computer from the port's own 1-bit display output (see [Checking that an optimisation does not change the picture](docs/picture-check.md)), not filmed on a device, so it says nothing about device speed.*
-
 ## Controls
 
-| Input | In the game | In Quake's menus |
-| --- | --- | --- |
-| D-pad up / down | Walk forward / back | Move the cursor |
-| D-pad left / right | Turn left / right (crank out: strafe) | Change the highlighted value |
-| A | Fire | Select |
-| B | Jump | Back |
-| Crank | Turn left / right (clockwise = right) | - |
+| Input | In the game | In game with crank out | In Quake's menus |
+| --- | --- | --- | --- |
+| D-pad up / down | Walk forward / back | Walk forward / back | Move the cursor |
+| D-pad left / right | Turn left / right | Strafe | Change the highlighted value |
+| A | Fire | Fire | Select |
+| B | Jump | Jump | Back |
+| Crank | - | Turn left / right (clockwise = right) | - |
 
 You run by default; the Options menu's "Always Run" turns that off. While the title-screen demo plays, A or B opens Quake's menu.
 
-**Crank out.** Pulling the crank out of the body changes two things:
+**Crank out.** Pulling the crank out changes two things:
 
 - The crank turns the view, so D-pad left / right strafe instead of turning.
 - Autofire is active (below).
