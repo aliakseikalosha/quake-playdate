@@ -1,22 +1,21 @@
 # Quake for Playdate
 
 A WinQuake port for the [Playdate](https://play.date/), running on the device and in the Playdate Simulator.
-
 Based on the original [Quake GPL source](https://github.com/id-Software/Quake), through [sysprog21/quake-embedded](https://github.com/sysprog21/quake-embedded).
-
-Source documentation is in [docs/](docs/README.md): a [source code index](docs/source-index.md) of every file with links to a detailed description of each.
 
 ![Quake demo 1 on the Playdate screen](docs/demo.gif)
 
+Source documentation is in [docs/](docs/README.md): a [source code index](docs/source-index.md) of every file with links to a detailed description of each.
+
 ## Controls
 
-| Input | In the game | In game with crank out | In Quake's menus |
-| --- | --- | --- | --- |
-| D-pad up / down | Walk forward / back | Walk forward / back | Move the cursor |
-| D-pad left / right | Turn left / right | Strafe | Change the highlighted value |
-| A | Fire | Fire | Select |
-| B | Jump | Jump | Back |
-| Crank | - | Turn left / right (clockwise = right) | - |
+| Input              | In the game         | In game with crank out                | In Quake's menus             |
+| ------------------ | ------------------- | ------------------------------------- | ---------------------------- |
+| D-pad up / down    | Walk forward / back | Walk forward / back                   | Move the cursor              |
+| D-pad left / right | Turn left / right   | Strafe                                | Change the highlighted value |
+| A                  | Fire                | Fire                                  | Select                       |
+| B                  | Jump                | Jump                                  | Back                         |
+| Crank              | -                   | Turn left / right (clockwise = right) | -                            |
 
 You run by default; the Options menu's "Always Run" turns that off. While the title-screen demo plays, A or B opens Quake's menu.
 
